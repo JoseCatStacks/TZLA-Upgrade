@@ -12,6 +12,7 @@ use App\Services\Wallet\NonceService;
 use App\Services\Wallet\SignatureVerifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 final class AuthController extends Controller
 {
@@ -61,8 +62,9 @@ final class AuthController extends Controller
         );
         $wallet->forceFill(['last_seen_at' => now()])->save();
 
-        // Always re-check on connect so a stub→helius switch (or a recent buy)
+        // Always re-check on connect so a stub→helius switch (or a recent stake)
         // is visible immediately instead of waiting out the cache window.
+        Cache::forget("holdings:{$wallet->address}");
         $holdings = $this->holdingsVerifier->holdings($wallet->address);
         $wallet->forceFill([
             'tzla_balance_cached'        => $holdings->tzlaBalance,

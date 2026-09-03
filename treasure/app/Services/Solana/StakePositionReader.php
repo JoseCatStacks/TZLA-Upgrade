@@ -14,6 +14,9 @@ final class StakePositionReader
 {
     private const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
+    /** Ed25519 field prime: 2^255 - 19 */
+    private const P = '57896044618658097711785492504343953926634992332820282019728792003956564819949';
+
     public function __construct(
         private readonly string $apiKey,
         private readonly string $rpcUrl,
@@ -42,6 +45,7 @@ final class StakePositionReader
             return 0.0;
         }
 
+        // Anchor account: 8-byte discriminator + pool pubkey(32) + stake_amount u64 @ offset 40.
         ['lo' => $lo, 'hi' => $hi] = unpack('Vlo/Vhi', substr($data, 40, 8));
         $raw = bcadd(bcmul((string) $hi, '4294967296'), (string) $lo);
 
@@ -49,7 +53,7 @@ final class StakePositionReader
         return (float) bcdiv($raw, '1000000000', 9);
     }
 
-    private function findUserStakePda(string $walletAddress): string
+    public function findUserStakePda(string $walletAddress): string
     {
         $program = $this->base58Decode($this->programId);
         $pool = $this->base58Decode($this->poolAddress);
@@ -100,15 +104,70 @@ final class StakePositionReader
         return $raw === false ? null : $raw;
     }
 
+    /**
+     * True when $pubkey is a valid compressed EdwardsY point on ed25519.
+     *
+     * Must match Solana's curve25519-dalek decompress check — NOT libsodium's
+     * pk_to_curve25519, which also requires the prime-order subgroup and
+     * misclassifies some on-curve bumps (so we pick the wrong PDA).
+     */
     private function isOnCurve(string $pubkey): bool
     {
-        try {
-            sodium_crypto_sign_ed25519_pk_to_curve25519($pubkey);
-
-            return true;
-        } catch (\Throwable) {
+        if (strlen($pubkey) !== 32) {
             return false;
         }
+
+        $bytes = array_values(unpack('C*', $pubkey));
+        $bytes[31] &= 0x7f; // clear x-sign bit → recover y
+
+        $y = '0';
+        for ($i = 0; $i < 32; $i++) {
+            $y = bcadd($y, bcmul((string) $bytes[$i], bcpow('2', (string) (8 * $i), 0), 0), 0);
+        }
+
+        $p = self::P;
+        if (bccomp($y, $p) >= 0) {
+            return false;
+        }
+
+        // d = -121665/121666 mod p  (ed25519 twisted Edwards constant)
+        $d = bcmod(bcmul('-121665', $this->modInverse('121666', $p), 0), $p);
+        if (bccomp($d, '0') < 0) {
+            $d = bcadd($d, $p, 0);
+        }
+
+        $y2 = bcmod(bcmul($y, $y, 0), $p);
+        $u = bcmod(bcsub($y2, '1', 0), $p);                 // y² - 1
+        $v = bcmod(bcadd(bcmul($d, $y2, 0), '1', 0), $p);   // d·y² + 1
+        if (bccomp($u, '0') < 0) {
+            $u = bcadd($u, $p, 0);
+        }
+        if (bccomp($v, '0') < 0) {
+            $v = bcadd($v, $p, 0);
+        }
+
+        // x² = u · v⁻¹  must be a quadratic residue mod p
+        $x2 = bcmod(bcmul($u, $this->modInverse($v, $p), 0), $p);
+
+        return $this->isQuadraticResidue($x2, $p);
+    }
+
+    private function modInverse(string $a, string $p): string
+    {
+        // a^(p-2) ≡ a⁻¹ (mod p) for prime p
+        return bcpowmod($a, bcsub($p, '2', 0), $p);
+    }
+
+    private function isQuadraticResidue(string $a, string $p): bool
+    {
+        if (bccomp($a, '0') === 0) {
+            return true;
+        }
+
+        // Euler criterion: a^((p-1)/2) ≡ 1 (mod p) iff square
+        $legendre = bcpowmod($a, bcdiv(bcsub($p, '1', 0), '2', 0), $p);
+
+        return bccomp($legendre, '1') === 0;
     }
 
     private function base58Decode(string $encoded): string

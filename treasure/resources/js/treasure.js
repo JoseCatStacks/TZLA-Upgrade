@@ -117,7 +117,8 @@ function openHowToPlay() {
     const hasGolden = w && (w.golden_ticket_count || 0) > 0;
     const hasNft    = w && (w.nft_count || 0) > 0;
     const hasTzla   = w && w.holds_tzla;
-    const canPlay   = w && (w.can_play ?? (hasGolden || hasNft || hasTzla));
+    const hasStaked = w && w.has_staked;
+    const canPlay   = w && (w.can_play ?? (hasGolden || hasNft || hasTzla || hasStaked));
 
     $$('.htp-tier', dlg).forEach(tier => {
         tier.classList.remove('eligible', 'ineligible');
