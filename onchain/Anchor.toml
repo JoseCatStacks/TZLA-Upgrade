@@ -1,0 +1,16 @@
+[toolchain]
+anchor_version = "0.31.1"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.mainnet]
+sol_stake = "3pFCija5VgaUxJgoKMoGRCk79c2pkEgUA9NBzRPo8xjJ"
+
+[provider]
+cluster = "mainnet"
+wallet = "~/.config/solana/id.json"
+
+[workspace]
+members = ["programs/sol_stake"]

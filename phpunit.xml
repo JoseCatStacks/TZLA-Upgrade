@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="DB_CONNECTION" value="sqlite"/>
+        <env name="DB_DATABASE" value=":memory:"/>
+        <env name="DB_URL" value=""/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="ORACLE_CACHE_STORE" value="array"/>
+        <env name="HELIUS_API_KEY" value=""/>
+        <env name="STAKING_PROGRAM_ID" value="3pFCija5VgaUxJgoKMoGRCk79c2pkEgUA9NBzRPo8xjJ"/>
+        <env name="STAKING_POOL_OWNER" value="TZLA26BrLtNQZDq6C1ZdAmRcpKGn8V6Dk7Vm1S2vjT3"/>
+        <env name="STAKING_POOL_ADDRESS" value="2yYgVz8CDzvMFYZ2cfMy854RETrafVYSAAaUUJw9bAVV"/>
+        <env name="STAKING_REWARD_VAULT" value="DqjRmDNu3JRpgnUhjBrGERF9Czir569H8BcxBZt5RtQ3"/>
+        <env name="STAKING_TOKEN_MINT" value="4tWMJCW6tdpVUkwDpX1NEQURbtuQDg7H9DfkjEpGnq5D"/>
+    </php>
+</phpunit>
