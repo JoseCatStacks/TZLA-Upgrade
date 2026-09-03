@@ -102,8 +102,28 @@ final class GuessFlowTest extends TestCase
         }
     }
 
-    public function test_tzla_holder_gets_one_bundle_attempt(): void
+    public function test_week_one_has_unlimited_bundle_attempts(): void
     {
+        $this->app->instance(HoldingsVerifier::class, new StubHoldingsVerifier(tzlaBalance: 10.0, nftCount: 0));
+        $this->connect();
+        $this->seedWeek1();
+
+        $this->submitBundle(1, ['wrong', 'wrong', 'wrong'])
+            ->assertOk()
+            ->assertJson([
+                'correct_count' => 0,
+                'unlimited_attempts' => true,
+                'attempts_left' => null,
+            ]);
+
+        $this->submitBundle(1, ['wrong', 'wrong', 'wrong'])
+            ->assertOk()
+            ->assertJson(['unlimited_attempts' => true]);
+    }
+
+    public function test_capped_weeks_enforce_attempt_limit(): void
+    {
+        config(['game.weeks.unlimited_attempts' => []]);
         $this->app->instance(HoldingsVerifier::class, new StubHoldingsVerifier(tzlaBalance: 10.0, nftCount: 0));
         $this->connect();
         $this->seedWeek1();
@@ -119,6 +139,7 @@ final class GuessFlowTest extends TestCase
 
     public function test_exhausted_attempts_do_not_consume_a_fee_payment(): void
     {
+        config(['game.weeks.unlimited_attempts' => []]);
         $this->app->instance(HoldingsVerifier::class, new StubHoldingsVerifier(tzlaBalance: 10.0, nftCount: 0));
         $this->connect();
         $this->seedWeek1();

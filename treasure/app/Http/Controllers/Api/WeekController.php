@@ -63,7 +63,8 @@ final class WeekController extends Controller
         }
 
         $wallet = $this->currentWallet($request);
-        $attemptsAllowed = $wallet ? $this->policy->attemptsAllowedPerWeek($wallet) : 0;
+        $unlimited = $this->policy->hasUnlimitedAttempts($week);
+        $attemptsAllowed = $wallet ? $this->policy->attemptsAllowedPerWeek($wallet, $week) : 0;
         $attemptsUsed = $wallet ? $this->bundles->attemptsUsed($wallet, $week) : 0;
         $weekComplete = $wallet ? $this->bundles->hasCompleted($wallet, $week) : false;
 
@@ -87,9 +88,10 @@ final class WeekController extends Controller
             'reward_description' => $week->reward_description,
             'is_unlocked' => true,
             'week_complete' => $weekComplete,
+            'unlimited_attempts' => $unlimited,
             'attempts_used' => $attemptsUsed,
-            'attempts_allowed' => $attemptsAllowed,
-            'attempts_left' => max(0, $attemptsAllowed - $attemptsUsed),
+            'attempts_allowed' => $unlimited ? null : $attemptsAllowed,
+            'attempts_left' => $unlimited ? null : max(0, $attemptsAllowed - $attemptsUsed),
             'total_words' => $week->words->count(),
             'words' => $words,
             'wallet_connected' => $wallet !== null,

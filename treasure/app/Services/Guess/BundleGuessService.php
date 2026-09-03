@@ -55,7 +55,8 @@ final class BundleGuessService
     {
         $words = $week->words()->orderBy('position')->get();
         $total = $words->count();
-        $attemptsAllowed = $this->policy->attemptsAllowedPerWeek($wallet);
+        $unlimited = $this->policy->hasUnlimitedAttempts($week);
+        $attemptsAllowed = $this->policy->attemptsAllowedPerWeek($wallet, $week);
         $attemptsUsed = $this->attemptsUsed($wallet, $week);
 
         $correct = 0;
@@ -128,9 +129,10 @@ final class BundleGuessService
             'correct_count' => $correct,
             'total_words' => $total,
             'is_complete' => $isComplete,
+            'unlimited_attempts' => $unlimited,
             'attempts_used' => $attemptsUsed + 1,
             'attempts_allowed' => $attemptsAllowed,
-            'attempts_left' => max(0, $attemptsAllowed - ($attemptsUsed + 1)),
+            'attempts_left' => $unlimited ? PHP_INT_MAX : max(0, $attemptsAllowed - ($attemptsUsed + 1)),
         ];
     }
 }

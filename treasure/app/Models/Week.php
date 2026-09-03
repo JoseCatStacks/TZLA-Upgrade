@@ -41,11 +41,22 @@ final class Week extends Model
 
     public function scopeUnlocked(Builder $query): Builder
     {
-        return $query->where('active', true)->where('starts_at', '<=', now());
+        $max = (int) config('game.weeks.max_playable', PHP_INT_MAX);
+
+        return $query
+            ->where('active', true)
+            ->where('starts_at', '<=', now())
+            ->where('number', '<=', $max);
     }
 
     public function isUnlocked(): bool
     {
-        return $this->active && $this->starts_at !== null && $this->starts_at->isPast();
+        if (! $this->active || $this->starts_at === null || ! $this->starts_at->isPast()) {
+            return false;
+        }
+
+        $max = (int) config('game.weeks.max_playable', PHP_INT_MAX);
+
+        return $this->number <= $max;
     }
 }

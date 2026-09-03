@@ -218,4 +218,25 @@ php artisan serve
 Requires PHP 8.3+ with the `sodium` extension (used for wallet signature
 verification) and `pdo_sqlite`.
 
-`php artisan test` should report 64 passing.
+`php artisan test` should report **64 passing**.
+
+---
+
+## 7. Launch rollout (Week 1 only)
+
+As of the latest patch, treasure hunt play is intentionally limited:
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `GAME_MAX_PLAYABLE_WEEK` | `1` | Weeks with `number > 1` return **403 week_locked** even if `starts_at` is in the past and the week is active. Raise this when opening Week 2, 3, etc. |
+| `GAME_UNLIMITED_ATTEMPT_WEEKS` | `1` | Listed weeks ignore the `GAME_ATTEMPTS_MAX` cap. Week 1 players can submit bundles until they clear it; **each submit still requires its own fee**. |
+
+To open Week 2 later:
+
+```env
+GAME_MAX_PLAYABLE_WEEK=2
+# Remove 1 from unlimited list if Week 2 should use normal attempt caps:
+GAME_UNLIMITED_ATTEMPT_WEEKS=
+```
+
+The frontend How-to-Play copy and locked-week popup message reflect this rollout. `GET /api/game-config` exposes `max_playable_week` and `unlimited_attempt_weeks` for the client.

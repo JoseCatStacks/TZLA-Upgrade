@@ -1168,8 +1168,8 @@
                 <div class="htp-section">
                     <div class="htp-section-title">How to Play</div>
                     <ol class="htp-steps">
-                        <li data-n="I">Each week holds three hidden words. Click a scroll on the map to open that week.</li>
-                        <li data-n="II">Fill every answer, then submit the bundle once — ye cannot send a partial scroll.</li>
+                        <li data-n="I">Right now only Week 1 is open — later weeks stay locked until we say otherwise.</li>
+                        <li data-n="II">Week 1 has unlimited tries. Fill every answer, then submit the bundle once — no partial scrolls.</li>
                         <li data-n="III">The only clue ye get is how many hit (1/3, 2/3…). Not which ones.</li>
                         <li data-n="IV">Clear all three and yer name and wallet go on the bounty board for a hand-paid prize.</li>
                         <li data-n="V">Each bundle costs SOL: 0.03 Golden Ticket · 0.06 NFT / staked / 33+ TZLA · 0.09 otherwise.</li>

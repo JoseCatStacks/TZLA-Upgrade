@@ -52,6 +52,21 @@ final class GameConfigTest extends TestCase
             ->assertJson(['payments_enabled' => false]);
     }
 
+    public function test_game_config_exposes_rollout_controls(): void
+    {
+        config([
+            'game.weeks.max_playable' => 1,
+            'game.weeks.unlimited_attempts' => [1],
+        ]);
+
+        $this->getJson('/api/game-config')
+            ->assertOk()
+            ->assertJson([
+                'max_playable_week' => 1,
+                'unlimited_attempt_weeks' => [1],
+            ]);
+    }
+
     public function test_inactive_weeks_are_hidden_from_the_public_list(): void
     {
         Week::create([

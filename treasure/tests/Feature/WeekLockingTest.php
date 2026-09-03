@@ -51,6 +51,21 @@ final class WeekLockingTest extends TestCase
         $this->assertCount(3, $res['weeks']);
         $this->assertTrue($res['weeks'][0]['is_unlocked']);
         $this->assertFalse($res['weeks'][1]['is_unlocked']);
+        $this->assertFalse($res['weeks'][2]['is_unlocked']);
+    }
+
+    public function test_week_above_max_playable_is_locked_even_when_started(): void
+    {
+        Week::create([
+            'number' => 2,
+            'title' => 'Week 2',
+            'starts_at' => now()->subDay(),
+            'active' => true,
+        ]);
+
+        $this->getJson('/api/weeks/2')
+            ->assertStatus(403)
+            ->assertJson(['error' => 'week_locked']);
     }
 
     public function test_missing_week_returns_404(): void

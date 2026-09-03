@@ -36,6 +36,8 @@ PORTAL_TREASURE_URL=http://127.0.0.1:8399
 | `GAME_TREASURY_ADDRESS` | Guess fees land here |
 | `SOLANA_TZLA_MINT` | Eligibility |
 | `SOLANA_NFT_COLLECTION` | NFT attempt tiers |
+| `GAME_MAX_PLAYABLE_WEEK=1` | Only weeks ≤ this number unlock. **Week 2+ stay locked** until you raise this. |
+| `GAME_UNLIMITED_ATTEMPT_WEEKS=1` | Week 1 has **unlimited** bundle attempts (fee still due each submit). |
 | `TELEGRAM_WEBHOOK_SECRET` | If Telegram bot enabled |
 
 `php artisan test` should report **64 passing**.

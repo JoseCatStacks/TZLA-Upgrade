@@ -82,10 +82,11 @@ final class GuessController extends Controller
             ], 409);
         }
 
-        $attemptsAllowed = $this->policy->attemptsAllowedPerWeek($wallet);
+        $unlimited = $this->policy->hasUnlimitedAttempts($week);
+        $attemptsAllowed = $this->policy->attemptsAllowedPerWeek($wallet, $week);
         $attemptsUsed = $this->bundles->attemptsUsed($wallet, $week);
 
-        if ($attemptsUsed >= $attemptsAllowed) {
+        if (! $unlimited && $attemptsUsed >= $attemptsAllowed) {
             return response()->json([
                 'error' => 'no_attempts_left',
                 'message' => 'No bundle attempts remaining for this week. You have not been charged.',
@@ -174,9 +175,10 @@ final class GuessController extends Controller
             'correct_count' => $result['correct_count'],
             'total_words' => $result['total_words'],
             'is_complete' => $result['is_complete'],
+            'unlimited_attempts' => $unlimited,
             'attempts_used' => $result['attempts_used'],
-            'attempts_allowed' => $result['attempts_allowed'],
-            'attempts_left' => $result['attempts_left'],
+            'attempts_allowed' => $unlimited ? null : $result['attempts_allowed'],
+            'attempts_left' => $unlimited ? null : $result['attempts_left'],
             'week_complete' => $result['is_complete'],
             'fee_paid_sol' => round($paidSol, 9),
             'fee_tier' => $this->feeTier->label($wallet),

@@ -68,6 +68,18 @@ function shortAddr(addr) {
     return addr && addr.length > 10 ? `${addr.slice(0, 4)}…${addr.slice(-4)}` : addr || '';
 }
 
+function attemptsBadgeLabel() {
+    const unlimited = state.config?.unlimited_attempt_weeks || [];
+    const max = state.config?.max_playable_week;
+    if (max === 1 && unlimited.map(Number).includes(1)) {
+        return 'Unlimited tries · Week 1';
+    }
+    if (state.attemptsPerWord > 0) {
+        return `${state.attemptsPerWord} tries/week`;
+    }
+    return '0 tries/week';
+}
+
 function renderConnect() {
     const box = $('#tzla-connect');
     if (!box) return;
@@ -76,7 +88,7 @@ function renderConnect() {
             <div class="wallet-pill">
                 <span class="wallet-dot" title="TZLA holder: ${state.wallet.holds_tzla ? 'yes' : 'no'}"></span>
                 <span class="wallet-addr">${shortAddr(state.wallet.address)}</span>
-                <span class="wallet-att">${state.attemptsPerWord} tries/week</span>
+                <span class="wallet-att">${attemptsBadgeLabel()}</span>
                 <button type="button" class="wallet-disc" data-action="disconnect">×</button>
             </div>
             <button type="button" class="htp-btn" data-action="open-htp" aria-label="How to Play">
@@ -516,8 +528,11 @@ async function loadWeekIntoPopup(weekNumber) {
         const w = await api('GET', `/api/weeks/${weekNumber}`);
         renderWeekInPopup(w);
     } catch (e) {
-        if (e.status === 403) body.innerHTML = `<p class="tzla-err">Week locked.</p>`;
-        else body.innerHTML = `<p class="tzla-err">${e.message}</p>`;
+        if (e.status === 403) {
+            body.innerHTML = `<p class="tzla-err">This week is locked until further notice. Only Week 1 is open right now.</p>`;
+        } else {
+            body.innerHTML = `<p class="tzla-err">${e.message}</p>`;
+        }
     }
 }
 
@@ -526,7 +541,8 @@ function renderWeekInPopup(week) {
     const connected = week.wallet_connected;
     const eligible = connected && state.wallet && state.wallet.can_play !== false;
     const complete = !!week.week_complete;
-    const attemptsLeft = week.attempts_left ?? 0;
+    const unlimited = !!week.unlimited_attempts;
+    const attemptsLeft = unlimited ? Infinity : (week.attempts_left ?? 0);
     const canSubmit = eligible && !complete && attemptsLeft > 0;
 
     const fee = currentFeeSol();
@@ -541,7 +557,9 @@ function renderWeekInPopup(week) {
         : '';
 
     const attemptsNote = connected && eligible && !complete
-        ? `<div class="tzla-note">${attemptsLeft}/${week.attempts_allowed ?? 0} attempts left this week.</div>`
+        ? (unlimited
+            ? '<div class="tzla-note">Unlimited attempts this week (fee still due each submit).</div>'
+            : `<div class="tzla-note">${attemptsLeft}/${week.attempts_allowed ?? 0} attempts left this week.</div>`)
         : '';
 
     const profile = canSubmit ? `
@@ -781,8 +799,11 @@ async function onBundleSubmit(e) {
         }
 
         status.className = 'tzla-word-status tzla-bad';
-        status.textContent = `${r.correct_count}/${r.total_words} correct. ${r.attempts_left} attempts left.`;
-        if (r.attempts_left > 0) {
+        const leftNote = r.unlimited_attempts
+            ? 'Unlimited attempts remaining.'
+            : `${r.attempts_left} attempts left.`;
+        status.textContent = `${r.correct_count}/${r.total_words} correct. ${leftNote}`;
+        if (r.unlimited_attempts || r.attempts_left > 0) {
             inputs.forEach(i => { i.disabled = false; });
             updateBundleSubmitEnabled(form);
         }

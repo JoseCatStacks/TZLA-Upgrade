@@ -38,6 +38,11 @@ final class GameConfigController extends Controller
                 'golden_ticket_sol' => $golden,
                 'tzla_mid_threshold' => (float) config('game.play_gate.tzla_mid_threshold', 33),
             ],
+            'max_playable_week' => (int) config('game.weeks.max_playable', 1),
+            'unlimited_attempt_weeks' => array_values(array_map(
+                'intval',
+                config('game.weeks.unlimited_attempts', [1]),
+            )),
             'payments_enabled' => strtolower((string) config('solana.provider')) === 'helius',
             'your_fee_sol' => $wallet ? $this->feeTier->amountSol($wallet) : $standard,
             'your_fee_tier' => $wallet ? $this->feeTier->label($wallet) : 'standard',

@@ -27,11 +27,29 @@ return [
 
     'attempts' => [
         // Bundle attempts per week: base + 1 per NFT, capped.
+        // Weeks listed in weeks.unlimited_attempts ignore this cap.
         'base_per_week' => (int) env('GAME_ATTEMPTS_BASE', 1),
         'max_per_week' => (int) env('GAME_ATTEMPTS_MAX', 5),
         // Legacy aliases used by older tests/code paths.
         'base_per_word' => (int) env('GAME_ATTEMPTS_BASE', 1),
         'max_per_word' => (int) env('GAME_ATTEMPTS_MAX', 5),
+    ],
+
+    /*
+    | Launch / rollout controls
+    | -------------------------
+    | max_playable: weeks with number > this stay locked (even if starts_at
+    | is in the past). Raise this env when opening the next week.
+    |
+    | unlimited_attempts: comma-separated week numbers that ignore the
+    | attempt cap (fee still required every submit). Default: week 1 only.
+    */
+    'weeks' => [
+        'max_playable' => (int) env('GAME_MAX_PLAYABLE_WEEK', 1),
+        'unlimited_attempts' => array_values(array_filter(array_map(
+            static fn (string $n): int => (int) trim($n),
+            explode(',', (string) env('GAME_UNLIMITED_ATTEMPT_WEEKS', '1')),
+        ), static fn (int $n): bool => $n > 0)),
     ],
 
     'spam' => [

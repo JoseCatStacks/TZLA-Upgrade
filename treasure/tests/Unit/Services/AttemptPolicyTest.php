@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services;
 
 use App\Models\Wallet;
+use App\Models\Week;
 use App\Services\Guess\AttemptPolicy;
 use Tests\TestCase;
 
@@ -55,5 +56,15 @@ final class AttemptPolicyTest extends TestCase
     {
         $wallet = new Wallet(['tzla_balance_cached' => 0, 'nft_count_cached' => 0, 'staked_amount_cached' => 5]);
         $this->assertSame(1, (new AttemptPolicy)->attemptsAllowedPerWeek($wallet));
+    }
+
+    public function test_unlimited_week_bypasses_attempt_cap(): void
+    {
+        config(['game.weeks.unlimited_attempts' => [1]]);
+        $wallet = new Wallet(['tzla_balance_cached' => 10, 'nft_count_cached' => 0]);
+        $week = new Week(['number' => 1]);
+
+        $this->assertTrue((new AttemptPolicy)->hasUnlimitedAttempts($week));
+        $this->assertSame(PHP_INT_MAX, (new AttemptPolicy)->attemptsAllowedPerWeek($wallet, $week));
     }
 }
