@@ -18,6 +18,7 @@ Route::prefix('auth')->group(function (): void {
 
 Route::get('/game-config', [GameConfigController::class, 'index']);
 Route::get('/solana/blockhash', [GameConfigController::class, 'blockhash'])->middleware('throttle:60,1');
+Route::post('/solana/send', [GameConfigController::class, 'send'])->middleware('throttle:30,1');
 
 Route::get('/weeks', [WeekController::class, 'index']);
 Route::get('/weeks/{number}', [WeekController::class, 'show'])->whereNumber('number');

@@ -47,16 +47,29 @@ final class HeliusFeeVerifier implements FeeVerifier
             return null;
         }
 
-        $response = $this->rpc('getTransaction', [
-            $txSignature,
-            [
-                'encoding'                       => 'json',
-                'commitment'                     => $this->commitment,
-                'maxSupportedTransactionVersion' => 0,
-            ],
-        ]);
+        $tx = null;
+        // Wallets return as soon as the tx is submitted. Poll briefly so a
+        // freshly paid fee is not rejected as "not found" and lost.
+        for ($attempt = 1; $attempt <= 10; $attempt++) {
+            $response = $this->rpc('getTransaction', [
+                $txSignature,
+                [
+                    'encoding'                       => 'json',
+                    'commitment'                     => $this->commitment,
+                    'maxSupportedTransactionVersion' => 0,
+                ],
+            ]);
 
-        $tx = data_get($response, 'result');
+            $tx = data_get($response, 'result');
+            if ($tx !== null) {
+                break;
+            }
+
+            if ($attempt < 10) {
+                usleep(500_000);
+            }
+        }
+
         if ($tx === null) {
             Log::info('HeliusFeeVerifier: transaction not found or not confirmed', ['sig' => $txSignature]);
 
@@ -157,8 +170,8 @@ final class HeliusFeeVerifier implements FeeVerifier
 
     /**
      * Account keys are plain strings under `json` encoding but objects under
-     * `jsonParsed`. Normalise both so a config change cannot silently break
-     * verification.
+     * `jsonParsed`. Versioned (v0) transactions also append ALT-loaded addresses
+     * in meta.loadedAddresses — balances are indexed across that full list.
      *
      * @param  array<string, mixed>  $tx
      * @return list<string>
@@ -175,6 +188,14 @@ final class HeliusFeeVerifier implements FeeVerifier
                 $normalized[] = (string) $key['pubkey'];
             } else {
                 return [];
+            }
+        }
+
+        foreach (['writable', 'readonly'] as $group) {
+            foreach (data_get($tx, "meta.loadedAddresses.{$group}", []) as $key) {
+                if (is_string($key)) {
+                    $normalized[] = $key;
+                }
             }
         }
 

@@ -61,18 +61,15 @@ final class AuthController extends Controller
         );
         $wallet->forceFill(['last_seen_at' => now()])->save();
 
-        $needsHoldings = $wallet->holdings_refreshed_at === null
-            || $wallet->holdings_refreshed_at->diffInMinutes(now()) > 5;
-
-        if ($needsHoldings) {
-            $holdings = $this->holdingsVerifier->holdings($wallet->address);
-            $wallet->forceFill([
-                'tzla_balance_cached'        => $holdings->tzlaBalance,
-                'nft_count_cached'           => $holdings->nftCount,
-                'golden_ticket_count_cached' => $holdings->goldenTicketCount,
-                'holdings_refreshed_at'      => now(),
-            ])->save();
-        }
+        // Always re-check on connect so a stub→helius switch (or a recent buy)
+        // is visible immediately instead of waiting out the cache window.
+        $holdings = $this->holdingsVerifier->holdings($wallet->address);
+        $wallet->forceFill([
+            'tzla_balance_cached'        => $holdings->tzlaBalance,
+            'nft_count_cached'           => $holdings->nftCount,
+            'golden_ticket_count_cached' => $holdings->goldenTicketCount,
+            'holdings_refreshed_at'      => now(),
+        ])->save();
 
         $request->session()->regenerate();
         $request->session()->put('wallet_id', $wallet->id);

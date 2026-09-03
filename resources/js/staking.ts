@@ -23,7 +23,6 @@ import {
     walletStatusLabel,
 } from './wallets';
 import {
-    getInjectedProvider,
     hasInjectedWallet,
     isIos,
     isMobileDevice,
@@ -1572,41 +1571,26 @@ window.addEventListener('DOMContentLoaded', async () => {
         waitForWallets(1500),
     ]);
 
-    if (hasInjectedWallet() && !walletPubkey) {
-        const injected = getInjectedProvider();
-        const adapter = listWalletAdapters().find((item) => {
-            if (!isInstalled(item)) return false;
-            const name = item.name.toLowerCase();
-            if (injected?.isPhantom) return name.includes('phantom');
-            if (injected?.isSolflare) return name.includes('solflare');
-            return true;
-        });
-        if (adapter) {
-            try {
-                bindAdapter(adapter);
-                await adapter.connect();
-                if (adapter.publicKey) {
-                    await handleWalletConnected(adapter.publicKey);
-                }
-            } catch {
-                adapter.off('disconnect', onAdapterDisconnect);
-            }
-        }
-    }
-
+    // Only restore the wallet the user explicitly chose last time.
+    // Never auto-pick Phantom just because it is injected — that unlocks Phantom
+    // on every refresh even when the user connected Jupiter / Solflare / etc.
     const saved = lastWalletName();
-    if (saved) {
+    if (saved && !walletPubkey) {
         const adapter = listWalletAdapters().find((item) => item.name === saved && isInstalled(item));
         if (adapter) {
             try {
                 bindAdapter(adapter);
-                await adapter.connect();
+                // autoConnect is silent (Wallet Standard `silent: true`); full
+                // connect() would pop unlock/approve prompts on every reload.
+                await adapter.autoConnect();
                 if (adapter.publicKey) {
                     await handleWalletConnected(adapter.publicKey);
                 }
             } catch {
                 adapter.off('disconnect', onAdapterDisconnect);
-                forgetWallet();
+                if (walletAdapter === adapter) walletAdapter = null;
+                // Stay disconnected if the wallet is locked or revoked — do not
+                // fall back to another extension.
             }
         }
     }

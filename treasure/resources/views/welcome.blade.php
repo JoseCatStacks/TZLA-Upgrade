@@ -553,6 +553,94 @@
         }
         .wallet-disc:hover{color:#f4c66a}
 
+        /* ==== WALLET PICKER (multi-wallet adapter) ==== */
+        body.wallet-modal-open{overflow:hidden}
+        .wallet-modal-overlay{
+            position:fixed;inset:0;z-index:10000;
+            display:none;align-items:center;justify-content:center;
+            padding:1rem;
+        }
+        .wallet-modal-overlay.open{display:flex !important}
+        .wallet-modal-backdrop{
+            position:absolute;inset:0;
+            background:rgba(5,3,1,.72);
+            backdrop-filter:blur(3px);
+        }
+        .wallet-modal-panel{
+            position:relative;z-index:1;
+            width:calc(100% - 2rem);max-width:420px;
+            background:linear-gradient(145deg,rgba(42,28,14,.97),rgba(20,12,6,.98));
+            border:1px solid rgba(200,160,90,.4);
+            border-radius:4px;
+            padding:1.1rem 1.25rem 1rem;
+            box-shadow:0 8px 32px rgba(0,0,0,.55);
+            color:rgba(240,215,160,.95);
+            font-family:'IM Fell English',serif;
+        }
+        .wallet-modal-header{
+            display:flex;align-items:center;justify-content:space-between;
+            margin-bottom:.85rem;padding-bottom:.65rem;
+            border-bottom:1px solid rgba(200,160,90,.25);
+        }
+        .wallet-modal-title{
+            font-family:'Pirata One',cursive;
+            font-size:1.35rem;letter-spacing:.04em;
+            color:#f0d7a0;margin:0;
+        }
+        .wallet-modal-close{
+            background:none;border:none;cursor:pointer;
+            color:rgba(240,215,160,.7);font-size:1.6rem;line-height:1;padding:.15rem;
+        }
+        .wallet-modal-close:hover{color:#f4c66a}
+        .wallet-modal-hint{
+            font-size:.9rem;font-style:italic;
+            color:rgba(240,215,160,.7);
+            margin-bottom:.75rem;line-height:1.45;
+            display:none;
+        }
+        .wallet-modal-list{display:flex;flex-direction:column;gap:.55rem}
+        .wallet-row{
+            display:flex;align-items:center;gap:.85rem;
+            width:100%;text-align:left;
+            padding:.85rem 1rem;
+            border:1px solid rgba(200,160,90,.3);
+            border-radius:4px;
+            background:rgba(255,230,180,.06);
+            color:rgba(240,215,160,.95);
+            cursor:pointer;
+            font-family:'IM Fell English',serif;
+            letter-spacing:.03em;
+            text-decoration:none;
+        }
+        .wallet-row:hover{
+            border-color:rgba(244,198,106,.7);
+            background:rgba(244,198,106,.1);
+        }
+        .wallet-row-primary{
+            border-color:rgba(244,198,106,.55);
+            background:rgba(244,198,106,.12);
+        }
+        .wallet-row-icon{
+            width:28px;height:28px;border-radius:6px;flex-shrink:0;object-fit:cover;
+        }
+        .wallet-row-name{flex:1;font-size:1rem}
+        .wallet-row-state{
+            font-size:.7rem;letter-spacing:.08em;
+            color:#5cc46a;text-transform:uppercase;
+        }
+        .wallet-empty{
+            font-style:italic;color:rgba(240,215,160,.55);
+            padding:.8rem .2rem;margin:0;
+        }
+        @media (max-width:700px){
+            .wallet-modal-panel{
+                max-height:min(70vh,520px);
+                overflow-y:auto;
+                -webkit-overflow-scrolling:touch;
+            }
+            .wallet-row{min-height:52px}
+        }
+
         /* ==== POPUP DIALOG (weekwindow) ==== */
         #tzla-popup{
             /* Center in viewport regardless of UA styles. */
@@ -1111,6 +1199,18 @@
     </dialog>
 
     <div id="tzla-toast"></div>
+
+    <div id="walletModal" class="wallet-modal-overlay" aria-hidden="true" role="dialog" aria-labelledby="walletModalTitle">
+        <div class="wallet-modal-backdrop" data-action="close-wallet-modal"></div>
+        <div class="wallet-modal-panel">
+            <div class="wallet-modal-header">
+                <h2 id="walletModalTitle" class="wallet-modal-title">Connect Wallet</h2>
+                <button type="button" class="wallet-modal-close" data-action="close-wallet-modal" aria-label="Close">&times;</button>
+            </div>
+            <div id="walletModalHint" class="wallet-modal-hint"></div>
+            <div id="walletModalList" class="wallet-modal-list"></div>
+        </div>
+    </div>
 
 </body>
 </html>

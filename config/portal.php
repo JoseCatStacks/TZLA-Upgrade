@@ -7,7 +7,7 @@ return [
             'title' => 'Treasure Hunt',
             'url' => env('PORTAL_TREASURE_URL'),
             'embed' => true,
-            'desc' => 'The weekly word hunt. Connect Phantom and play.',
+            'desc' => 'The weekly word hunt. Connect a Solana wallet and play.',
         ],
         'nft' => [
             'title' => 'TZLA NFTs',

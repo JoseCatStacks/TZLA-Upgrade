@@ -134,26 +134,40 @@ final class GuessController extends Controller
             ], 402);
         }
 
-        // Claim the signature so it can never fund a second guess. The unique
-        // index makes this safe even if two requests race here simultaneously.
-        if (! $this->ledger->claim($feeSignature, $wallet, $word, $paidSol)) {
-            return $this->replayResponse($expectedSol);
-        }
-
-        // ── Record spam-guard hit AFTER payment is confirmed ─────────────────
-        $this->spam->record($wallet);
-
         // ── Optional wallet metadata ─────────────────────────────────────────
         $walletUpdates = array_filter([
             'username'       => $data['username']       ?? null,
             'payout_address' => $data['payout_address'] ?? null,
         ], static fn ($v): bool => $v !== null && $v !== '');
 
-        if ($walletUpdates !== []) {
-            $wallet->forceFill($walletUpdates)->save();
+        // Claim before recording the guess. If the guess write fails, release the
+        // claim so the same payment can be retried safely.
+        if (! $this->ledger->claim($feeSignature, $wallet, $word, $paidSol)) {
+            return $this->replayResponse($expectedSol);
         }
 
-        $result = $this->guesses->submit($wallet, $word, $data['guess']);
+        try {
+            if ($walletUpdates !== []) {
+                $wallet->forceFill($walletUpdates)->save();
+            }
+
+            $result = $this->guesses->submit($wallet, $word, $data['guess']);
+        } catch (\Throwable $e) {
+            report($e);
+            \App\Models\FeePayment::query()
+                ->where('signature', $feeSignature)
+                ->where('wallet_id', $wallet->id)
+                ->delete();
+
+            return response()->json([
+                'error'         => 'guess_failed_after_payment',
+                'message'       => 'Payment looked valid but the guess could not be saved. Tap submit again — we will reuse the same payment.',
+                'fee_signature' => $feeSignature,
+            ], 500);
+        }
+
+        // ── Record spam-guard hit AFTER payment is confirmed ─────────────────
+        $this->spam->record($wallet);
 
         return response()->json([
             'is_correct'       => $result->isCorrect,

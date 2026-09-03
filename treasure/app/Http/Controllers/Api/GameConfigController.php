@@ -48,6 +48,31 @@ final class GameConfigController extends Controller
         return response()->json($result);
     }
 
+    /**
+     * Broadcast a wallet-signed fee transaction so the browser never depends on
+     * the public Solana RPC (which often throws after the wallet already sent).
+     */
+    public function send(Request $request, BlockhashService $blockhashes): JsonResponse
+    {
+        if ($this->currentWallet($request) === null) {
+            return response()->json(['error' => 'wallet_not_connected'], 401);
+        }
+
+        $data = $request->validate([
+            'transaction' => ['required', 'string', 'max:8192'],
+        ]);
+
+        $signature = $blockhashes->sendRaw($data['transaction']);
+        if ($signature === null) {
+            return response()->json([
+                'error'   => 'broadcast_failed',
+                'message' => 'Could not broadcast the signed payment. Your wallet should not have been charged — if SOL left, contact support with the explorer link.',
+            ], 502);
+        }
+
+        return response()->json(['signature' => $signature]);
+    }
+
     private function currentWallet(Request $request): ?Wallet
     {
         $id = $request->session()->get('wallet_id');

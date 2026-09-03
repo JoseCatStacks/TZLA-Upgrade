@@ -25,10 +25,15 @@ final class HeliusHoldingsVerifier implements HoldingsVerifier
         return Cache::remember(
             "holdings:{$address}",
             $this->cacheTtl,
-            fn (): Holdings => new Holdings(
-                tzlaBalance: $this->fetchTzlaBalance($address),
-                ...$this->fetchNftCounts($address),
-            ),
+            function () use ($address): Holdings {
+                $nfts = $this->fetchNftCounts($address);
+
+                return new Holdings(
+                    tzlaBalance: $this->fetchTzlaBalance($address),
+                    nftCount: $nfts['nftCount'],
+                    goldenTicketCount: $nfts['goldenTicketCount'],
+                );
+            },
         );
     }
 

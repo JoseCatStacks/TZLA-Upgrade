@@ -149,4 +149,33 @@ final class HeliusFeeVerifierTest extends TestCase
 
         $this->assertNull($verifier->verifySubmissionFee('sig', self::PAYER));
     }
+
+    public function test_accepts_payment_when_treasury_is_in_loaded_addresses(): void
+    {
+        Http::fake([
+            '*' => Http::response([
+                'jsonrpc' => '2.0',
+                'result' => [
+                    'blockTime' => time(),
+                    'meta' => [
+                        'err' => null,
+                        'preBalances' => [1_000_000_000, 0],
+                        'postBalances' => [939_995_000, 60_000_000],
+                        'loadedAddresses' => [
+                            'writable' => [self::TREASURY],
+                            'readonly' => [],
+                        ],
+                    ],
+                    'transaction' => [
+                        'message' => [
+                            'header' => ['numRequiredSignatures' => 1],
+                            'accountKeys' => [self::PAYER],
+                        ],
+                    ],
+                ],
+            ]),
+        ]);
+
+        $this->assertSame(0.06, $this->verifier()->verifySubmissionFee('sig', self::PAYER));
+    }
 }

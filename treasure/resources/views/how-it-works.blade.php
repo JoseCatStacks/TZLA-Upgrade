@@ -595,7 +595,7 @@
                     <div class="step-num" aria-hidden="true">I</div>
                     <div class="step-body">
                         <div class="step-head">Connect <span class="accent">thy Wallet</span></div>
-                        <div class="step-copy">Sign in with Phantom to prove ye be a hand aboard the ship.</div>
+                        <div class="step-copy">Sign in with your Solana wallet to prove ye be a hand aboard the ship.</div>
                     </div>
                 </li>
                 <li class="step">

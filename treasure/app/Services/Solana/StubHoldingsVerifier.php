@@ -7,7 +7,7 @@ namespace App\Services\Solana;
 final class StubHoldingsVerifier implements HoldingsVerifier
 {
     public function __construct(
-        private readonly float $tzlaBalance = 1.0,
+        private readonly float $tzlaBalance = 100.0,
         private readonly int $nftCount = 0,
         private readonly int $goldenTicketCount = 0,
     ) {}

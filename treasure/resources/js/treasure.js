@@ -1,10 +1,33 @@
-import { payGuessFee, PaymentError } from './payment.js';
+import { payGuessFee, PaymentError, normalizeSignature } from './payment.js';
+import {
+    canConnect,
+    forgetWallet,
+    installUrl,
+    isInstalled,
+    lastWalletName,
+    listWalletAdapters,
+    rememberWallet,
+    waitForWallets,
+    walletStatusLabel,
+} from './wallets.ts';
+import {
+    isIos,
+    isMobileDevice,
+    isRedirectableAdapter,
+    mobileWalletHint,
+    needsWalletAppBrowser,
+    redirectAdapterToApp,
+    waitForInjectedWallet,
+    walletAppLinks,
+} from './mobile-wallet.ts';
 
 const state = {
     wallet: null,
     attemptsPerWord: 0,
     weeks: [],
     config: null,
+    /** @type {import('@solana/wallet-adapter-base').Adapter | null} */
+    adapter: null,
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -66,7 +89,7 @@ function renderConnect() {
             </button>`;
     } else {
         box.innerHTML = `
-            <button type="button" class="wallet-connect" data-action="connect" aria-label="Connect Phantom"><img src="/storage/connectbtn.png" alt="Connect Phantom" /></button>
+            <button type="button" class="wallet-connect" data-action="connect" aria-label="Connect Wallet"><img src="/storage/connectbtn.png" alt="Connect Wallet" /></button>
             <button type="button" class="htp-btn" data-action="open-prizes" aria-label="Prizes">
                 <img src="/storage/weekpaper.png" alt="" />
                 <span>Prizes</span>
@@ -229,39 +252,214 @@ async function refreshWeeks() {
     renderWeekTints();
 }
 
-async function connectPhantom() {
-    if (!window.solana || !window.solana.isPhantom) {
-        alert('Phantom wallet not detected. Install it from phantom.app then reload.');
-        window.open('https://phantom.app/', '_blank');
+function bindAdapter(adapter) {
+    state.adapter?.off('disconnect', onAdapterDisconnect);
+    state.adapter = adapter;
+    adapter.on('disconnect', onAdapterDisconnect);
+}
+
+function onAdapterDisconnect() {
+    state.adapter = null;
+}
+
+function fillWalletModalList() {
+    const list = $('#walletModalList');
+    const hint = $('#walletModalHint');
+    if (!list) return;
+
+    const adapters = listWalletAdapters();
+    list.replaceChildren();
+
+    if (hint) {
+        const message = mobileWalletHint();
+        if (message) {
+            hint.textContent = message;
+            hint.style.display = 'block';
+        } else {
+            hint.style.display = 'none';
+        }
+    }
+
+    if (needsWalletAppBrowser()) {
+        for (const app of walletAppLinks()) {
+            const row = document.createElement('a');
+            row.className = 'wallet-row wallet-row-primary';
+            row.href = app.url;
+            row.innerHTML = `
+                <img class="wallet-row-icon" alt="" src="${app.icon}" />
+                <span class="wallet-row-name">${app.label}</span>
+                <span class="wallet-row-state">Tap to open</span>
+            `;
+            list.appendChild(row);
+        }
+    }
+
+    if (adapters.length === 0 && !needsWalletAppBrowser()) {
+        const empty = document.createElement('p');
+        empty.className = 'wallet-empty';
+        empty.textContent = 'No Solana wallet found. Install Phantom, Solflare, or Backpack, then refresh.';
+        list.appendChild(empty);
         return;
     }
-    try {
-        const resp = await window.solana.connect();
-        const address = resp.publicKey.toString();
-        const { nonce, message } = await api('POST', '/api/auth/nonce', { address });
-        const encoded = new TextEncoder().encode(message);
-        const signed = await window.solana.signMessage(encoded, 'utf8');
-        const sigBase58 = toBase58(signed.signature);
-        const verify = await api('POST', '/api/auth/verify', {
-            address, nonce, signature: sigBase58,
+
+    for (const adapter of adapters) {
+        const ready = canConnect(adapter);
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'wallet-row';
+
+        if (adapter.icon) {
+            const icon = document.createElement('img');
+            icon.className = 'wallet-row-icon';
+            icon.alt = '';
+            icon.src = adapter.icon;
+            row.appendChild(icon);
+        }
+
+        const name = document.createElement('span');
+        name.className = 'wallet-row-name';
+        name.textContent = adapter.name;
+        row.appendChild(name);
+
+        const status = document.createElement('span');
+        status.className = 'wallet-row-state';
+        status.textContent = walletStatusLabel(adapter);
+        row.appendChild(status);
+
+        row.addEventListener('click', () => {
+            if (isRedirectableAdapter(adapter)) {
+                redirectAdapterToApp(adapter);
+                return;
+            }
+            if (ready) {
+                void connectAdapter(adapter);
+                return;
+            }
+            const url = installUrl(adapter.name);
+            if (url) window.open(url, '_blank', 'noopener,noreferrer');
+            else alert(`Install ${adapter.name}, then refresh this page.`);
         });
-        state.wallet = verify.wallet;
-        state.attemptsPerWord = verify.attempts_per_word || 0;
-        renderConnect();
-        // Fee tier depends on the connected wallet's holdings.
-        await Promise.all([refreshConfig(), refreshWeeks()]);
-    } catch (e) {
-        console.error(e);
-        alert('Wallet connect failed: ' + (e.message || e));
+        list.appendChild(row);
     }
+}
+
+function openWalletModal() {
+    const modal = $('#walletModal');
+    const list = $('#walletModalList');
+    if (!modal || !list) {
+        alert('Wallet picker is missing. Refresh the page.');
+        return;
+    }
+
+    fillWalletModalList();
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('wallet-modal-open');
+
+    void Promise.all([
+        waitForInjectedWallet(isIos() ? 5000 : isMobileDevice() ? 2500 : 500),
+        waitForWallets(800),
+    ]).then(() => {
+        if (modal.classList.contains('open')) fillWalletModalList();
+    });
+}
+
+function closeWalletModal() {
+    const modal = $('#walletModal');
+    if (!modal) return;
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('wallet-modal-open');
+}
+
+async function connectAdapter(adapter) {
+    closeWalletModal();
+    try {
+        bindAdapter(adapter);
+        await adapter.connect();
+        const publicKey = adapter.publicKey;
+        if (!publicKey) throw new Error(`${adapter.name} did not return a public key.`);
+        rememberWallet(adapter.name);
+        await authenticateWallet(publicKey.toBase58(), adapter);
+    } catch (e) {
+        adapter.off('disconnect', onAdapterDisconnect);
+        if (state.adapter === adapter) state.adapter = null;
+        const msg = String(e?.message ?? e);
+        if (/reject|cancel/i.test(msg)) {
+            showToast('Connection cancelled.');
+        } else {
+            console.error(e);
+            alert('Wallet connect failed: ' + msg);
+        }
+    }
+}
+
+/**
+ * Prove wallet ownership to the backend (SIWS-style nonce + signature).
+ * @param {string} address
+ * @param {import('@solana/wallet-adapter-base').Adapter} adapter
+ */
+async function authenticateWallet(address, adapter) {
+    if (typeof adapter.signMessage !== 'function') {
+        throw new Error(`${adapter.name} cannot sign messages. Try Phantom or Solflare.`);
+    }
+
+    const { nonce, message } = await api('POST', '/api/auth/nonce', { address });
+    const encoded = new TextEncoder().encode(message);
+    const signatureBytes = await adapter.signMessage(encoded);
+    const sigBase58 = toBase58(signatureBytes);
+    const verify = await api('POST', '/api/auth/verify', {
+        address, nonce, signature: sigBase58,
+    });
+    state.wallet = verify.wallet;
+    state.attemptsPerWord = verify.attempts_per_word || 0;
+    renderConnect();
+    await Promise.all([refreshConfig(), refreshWeeks()]);
+}
+
+function startConnect() {
+    openWalletModal();
 }
 
 async function disconnectWallet() {
     try { await api('POST', '/api/auth/logout'); } catch {}
-    try { window.solana && window.solana.disconnect && await window.solana.disconnect(); } catch {}
-    state.wallet = null; state.attemptsPerWord = 0;
+    forgetWallet();
+    const adapter = state.adapter;
+    try { await adapter?.disconnect(); } catch {}
+    onAdapterDisconnect();
+    state.wallet = null;
+    state.attemptsPerWord = 0;
     renderConnect();
     await refreshWeeks();
+}
+
+/** Reattach the previously chosen wallet after reload (silent — no unlock prompts). */
+async function restoreAdapterSession() {
+    const saved = lastWalletName();
+    if (!saved) return;
+
+    const adapter = listWalletAdapters().find((item) => item.name === saved && isInstalled(item));
+    if (!adapter) return;
+
+    try {
+        bindAdapter(adapter);
+        await adapter.autoConnect();
+        const pk = adapter.publicKey?.toBase58();
+        if (!pk) {
+            adapter.off('disconnect', onAdapterDisconnect);
+            if (state.adapter === adapter) state.adapter = null;
+            return;
+        }
+        // Session wallet and extension wallet must match; otherwise leave signing disconnected.
+        if (state.wallet?.address && pk !== state.wallet.address) {
+            await adapter.disconnect().catch(() => {});
+            onAdapterDisconnect();
+            return;
+        }
+    } catch {
+        adapter.off('disconnect', onAdapterDisconnect);
+        if (state.adapter === adapter) state.adapter = null;
+    }
 }
 
 const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -335,7 +533,7 @@ function renderWeekInPopup(week) {
     const fee = currentFeeSol();
     const paymentsOn = state.config ? state.config.payments_enabled !== false : true;
     const feeNote = (eligible && fee !== null && paymentsOn)
-        ? `<div class="tzla-note">Each guess costs <strong>${formatSol(fee)} SOL</strong>, paid to the treasury from your wallet. You approve every payment in Phantom.</div>`
+        ? `<div class="tzla-note">Each guess costs <strong>${formatSol(fee)} SOL</strong>, paid to the treasury from your wallet. You approve every payment in your wallet.</div>`
         : '';
 
     const ineligibleNote = (connected && !eligible)
@@ -352,7 +550,7 @@ function renderWeekInPopup(week) {
 
     body.innerHTML = `
         ${week.reward_description ? `<div class="tzla-reward">Reward: <em>${escape(week.reward_description)}</em></div>` : ''}
-        ${!connected ? '<div class="tzla-note">Connect a Phantom wallet holding TZLA to submit guesses.</div>' : ''}
+        ${!connected ? '<div class="tzla-note">Connect a Solana wallet holding TZLA to submit guesses.</div>' : ''}
         ${ineligibleNote}
         ${feeNote}
         ${profile}
@@ -404,8 +602,11 @@ function profileFields() {
 /**
  * Pays the per-guess fee and returns the transaction signature. In local
  * development the backend runs the stub verifier, so no real transfer is made.
+ *
+ * If a prior attempt already paid for this word but the guess POST failed, we
+ * reuse that signature instead of charging again.
  */
-async function obtainFeeSignature(status) {
+async function obtainFeeSignature(status, weekNumber, position) {
     if (!state.config) await refreshConfig();
 
     if (state.config && state.config.payments_enabled === false) {
@@ -415,16 +616,73 @@ async function obtainFeeSignature(status) {
         throw new PaymentError('Could not load payment settings. Try reloading.');
     }
 
+    const pending = readPendingFee(weekNumber, position);
+    if (pending) {
+        status.className = 'tzla-word-status';
+        status.textContent = 'Reusing your previous payment (no new charge)…';
+        return pending;
+    }
+
     const amountSol = currentFeeSol();
     status.className = 'tzla-word-status';
-    status.textContent = `Approve ${formatSol(amountSol)} SOL in Phantom…`;
+    status.textContent = `Approve ${formatSol(amountSol)} SOL in your wallet…`;
 
-    return payGuessFee({
+    if (!state.adapter?.connected) {
+        throw new PaymentError('Wallet disconnected. Connect again, then retry.');
+    }
+
+    const signature = await payGuessFee({
         treasury: state.config.treasury_address,
         amountSol,
         from: state.wallet.address,
         fetchBlockhash: () => api('GET', '/api/solana/blockhash'),
+        broadcastTransaction: (transaction) => api('POST', '/api/solana/send', { transaction }),
+        adapter: state.adapter,
     });
+
+    const normalized = normalizeSignature(signature);
+    if (!normalized) {
+        throw new PaymentError('Payment returned an unusable signature. Check your wallet before retrying.');
+    }
+
+    writePendingFee(weekNumber, position, normalized);
+    return normalized;
+}
+
+const PENDING_FEE_KEY = 'tzla:pending-fee';
+
+function readPendingFee(weekNumber, position) {
+    try {
+        const raw = sessionStorage.getItem(PENDING_FEE_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (!data?.signature || data.week !== weekNumber || data.position !== position) return null;
+        // Fee verifier rejects txs older than ~1 hour; stop reusing before that.
+        if (Date.now() - (data.ts || 0) > 50 * 60 * 1000) {
+            sessionStorage.removeItem(PENDING_FEE_KEY);
+            return null;
+        }
+        return data.signature;
+    } catch {
+        return null;
+    }
+}
+
+function writePendingFee(weekNumber, position, signature) {
+    try {
+        sessionStorage.setItem(PENDING_FEE_KEY, JSON.stringify({
+            week: weekNumber,
+            position,
+            signature,
+            ts: Date.now(),
+        }));
+    } catch {
+        // private mode
+    }
+}
+
+function clearPendingFee() {
+    try { sessionStorage.removeItem(PENDING_FEE_KEY); } catch {}
 }
 
 /**
@@ -476,8 +734,9 @@ async function onGuessSubmit(e) {
     button.disabled = true;
 
     try {
-        const feeSignature = await obtainFeeSignature(status);
+        const feeSignature = await obtainFeeSignature(status, weekNumber, position);
         const r = await submitGuessWithRetry(weekNumber, position, guess, feeSignature, status);
+        clearPendingFee();
 
         if (r.is_correct) {
             status.className = 'tzla-word-status tzla-ok';
@@ -504,12 +763,17 @@ async function onGuessSubmit(e) {
         status.textContent = guessErrorMessage(err);
 
         // Anything other than a spent attempt leaves the player free to retry.
+        // Pending fee signature is kept so retry does not charge again.
         const attemptConsumed = err.code === 'no_attempts_left' || err.code === 'already_solved';
+        if (err.code === 'fee_signature_already_used') {
+            clearPendingFee();
+        }
         if (!attemptConsumed) {
             input.disabled = false;
             button.disabled = false;
         }
         if (err.code === 'already_solved' || err.code === 'no_attempts_left') {
+            clearPendingFee();
             loadWeekIntoPopup(weekNumber);
         }
     }
@@ -525,7 +789,7 @@ function guessErrorMessage(err) {
         return 'That payment was already used. Each guess needs its own payment.';
     }
     if (err.code === 'invalid_fee_payment') {
-        return 'Payment could not be confirmed on-chain. If SOL left your wallet, wait a moment and try again.';
+        return 'Payment not confirmed yet. Tap submit again — we will reuse the same payment, not charge twice.';
     }
     return err.message || 'Submission failed.';
 }
@@ -538,13 +802,23 @@ function wireEvents() {
     document.addEventListener('click', ev => {
         const t = ev.target.closest('[data-action]');
         if (!t) return;
-        if (t.dataset.action === 'connect')     connectPhantom();
+        if (t.dataset.action === 'connect')     startConnect();
         if (t.dataset.action === 'disconnect')  disconnectWallet();
         if (t.dataset.action === 'close-popup') $('#tzla-popup').close();
         if (t.dataset.action === 'open-htp')     openHowToPlay();
         if (t.dataset.action === 'close-htp')    $('#tzla-htp').close();
         if (t.dataset.action === 'open-prizes')  openPrizes();
         if (t.dataset.action === 'close-prizes') $('#tzla-prizes').close();
+        if (t.dataset.action === 'close-wallet-modal') closeWalletModal();
+    });
+
+    const walletBackdrop = document.querySelector('#walletModal .wallet-modal-backdrop');
+    if (walletBackdrop) {
+        walletBackdrop.addEventListener('click', () => closeWalletModal());
+    }
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeWalletModal();
     });
 
     const htpDlg = $('#tzla-htp');
@@ -591,6 +865,11 @@ function wireEvents() {
 document.addEventListener('DOMContentLoaded', async () => {
     wireEvents();
     renderConnect();
-    await refreshMe();
+    await Promise.all([
+        refreshMe(),
+        waitForInjectedWallet(isIos() ? 5000 : isMobileDevice() ? 3000 : 500),
+        waitForWallets(1500),
+    ]);
     await Promise.all([refreshConfig(), refreshWeeks()]);
+    await restoreAdapterSession();
 });

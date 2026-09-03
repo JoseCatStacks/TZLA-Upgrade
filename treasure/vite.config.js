@@ -16,6 +16,14 @@ export default defineConfig({
         }),
         tailwindcss(),
     ],
+    define: {
+        global: 'globalThis',
+    },
+    resolve: {
+        alias: {
+            buffer: 'buffer',
+        },
+    },
     server: {
         watch: {
             ignored: ['**/storage/framework/views/**'],
