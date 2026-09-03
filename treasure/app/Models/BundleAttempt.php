@@ -7,22 +7,27 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-final class FeePayment extends Model
+final class BundleAttempt extends Model
 {
     public $timestamps = false;
 
     protected $fillable = [
-        'signature',
         'wallet_id',
-        'word_id',
         'week_id',
-        'amount_sol',
+        'correct_count',
+        'total_words',
+        'is_complete',
+        'answers',
+        'fee_signature',
         'created_at',
     ];
 
     protected $casts = [
         'created_at' => 'datetime',
-        'amount_sol' => 'decimal:9',
+        'is_complete' => 'boolean',
+        'correct_count' => 'integer',
+        'total_words' => 'integer',
+        'answers' => 'array',
     ];
 
     public function wallet(): BelongsTo
@@ -30,8 +35,8 @@ final class FeePayment extends Model
         return $this->belongsTo(Wallet::class);
     }
 
-    public function word(): BelongsTo
+    public function week(): BelongsTo
     {
-        return $this->belongsTo(Word::class);
+        return $this->belongsTo(Week::class);
     }
 }

@@ -18,6 +18,7 @@ final class HeliusHoldingsVerifier implements HoldingsVerifier
         private readonly ?string $goldenTicketClassicCollection,
         private readonly ?string $goldenTicketCnftCollection,
         private readonly int $cacheTtl = 300,
+        private readonly ?StakePositionReader $stakeReader = null,
     ) {}
 
     public function holdings(string $address): Holdings
@@ -27,11 +28,13 @@ final class HeliusHoldingsVerifier implements HoldingsVerifier
             $this->cacheTtl,
             function () use ($address): Holdings {
                 $nfts = $this->fetchNftCounts($address);
+                $staked = $this->stakeReader?->stakedAmount($address) ?? 0.0;
 
                 return new Holdings(
                     tzlaBalance: $this->fetchTzlaBalance($address),
                     nftCount: $nfts['nftCount'],
                     goldenTicketCount: $nfts['goldenTicketCount'],
+                    stakedAmount: $staked,
                 );
             },
         );

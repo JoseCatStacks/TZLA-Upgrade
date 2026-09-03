@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Wallet;
+use App\Services\Guess\FeeTier;
 use App\Services\Solana\BlockhashService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,24 +17,30 @@ use Illuminate\Http\Request;
  */
 final class GameConfigController extends Controller
 {
+    public function __construct(
+        private readonly FeeTier $feeTier,
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
         $wallet = $this->currentWallet($request);
 
-        $standard = (float) config('game.submission_fees.standard_sol', 0.06);
-        $golden   = (float) config('game.submission_fees.golden_ticket_sol', 0.03);
+        $standard = (float) config('game.submission_fees.standard_sol', 0.09);
+        $mid = (float) config('game.submission_fees.mid_sol', 0.06);
+        $golden = (float) config('game.submission_fees.golden_ticket_sol', 0.03);
 
         return response()->json([
             'treasury_address' => config('game.submission_fees.treasury_address'),
-            'network'          => config('solana.network'),
-            'fees'             => [
-                'standard_sol'      => $standard,
+            'network' => config('solana.network'),
+            'fees' => [
+                'standard_sol' => $standard,
+                'mid_sol' => $mid,
                 'golden_ticket_sol' => $golden,
+                'tzla_mid_threshold' => (float) config('game.play_gate.tzla_mid_threshold', 33),
             ],
-            // In local development the stub verifier accepts any signature, so the
-            // browser skips the real transfer instead of demanding devnet SOL.
             'payments_enabled' => strtolower((string) config('solana.provider')) === 'helius',
-            'your_fee_sol'     => $wallet && $wallet->holdsGoldenTicket() ? $golden : $standard,
+            'your_fee_sol' => $wallet ? $this->feeTier->amountSol($wallet) : $standard,
+            'your_fee_tier' => $wallet ? $this->feeTier->label($wallet) : 'standard',
         ]);
     }
 
@@ -65,7 +72,7 @@ final class GameConfigController extends Controller
         $signature = $blockhashes->sendRaw($data['transaction']);
         if ($signature === null) {
             return response()->json([
-                'error'   => 'broadcast_failed',
+                'error' => 'broadcast_failed',
                 'message' => 'Could not broadcast the signed payment. Your wallet should not have been charged — if SOL left, contact support with the explorer link.',
             ], 502);
         }

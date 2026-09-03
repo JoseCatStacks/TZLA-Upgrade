@@ -51,9 +51,9 @@ final class AttemptPolicyTest extends TestCase
         $this->assertSame(4, (new AttemptPolicy)->attemptsAllowedPerWord($wallet));
     }
 
-    public function test_null_nft_count_treats_as_zero(): void
+    public function test_staked_holder_can_play_without_liquid_tzla(): void
     {
-        $wallet = new Wallet(['tzla_balance_cached' => 10, 'nft_count_cached' => null]);
-        $this->assertSame(1, (new AttemptPolicy)->attemptsAllowedPerWord($wallet));
+        $wallet = new Wallet(['tzla_balance_cached' => 0, 'nft_count_cached' => 0, 'staked_amount_cached' => 5]);
+        $this->assertSame(1, (new AttemptPolicy)->attemptsAllowedPerWeek($wallet));
     }
 }

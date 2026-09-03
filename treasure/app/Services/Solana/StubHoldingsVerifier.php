@@ -10,10 +10,16 @@ final class StubHoldingsVerifier implements HoldingsVerifier
         private readonly float $tzlaBalance = 100.0,
         private readonly int $nftCount = 0,
         private readonly int $goldenTicketCount = 0,
+        private readonly float $stakedAmount = 0.0,
     ) {}
 
     public function holdings(string $address): Holdings
     {
-        return new Holdings($this->tzlaBalance, $this->nftCount, $this->goldenTicketCount);
+        return new Holdings(
+            tzlaBalance: $this->tzlaBalance,
+            nftCount: $this->nftCount,
+            goldenTicketCount: $this->goldenTicketCount,
+            stakedAmount: $this->stakedAmount,
+        );
     }
 }

@@ -66,6 +66,7 @@ final class AuthController extends Controller
         $holdings = $this->holdingsVerifier->holdings($wallet->address);
         $wallet->forceFill([
             'tzla_balance_cached'        => $holdings->tzlaBalance,
+            'staked_amount_cached'       => $holdings->stakedAmount,
             'nft_count_cached'           => $holdings->nftCount,
             'golden_ticket_count_cached' => $holdings->goldenTicketCount,
             'holdings_refreshed_at'      => now(),
@@ -110,11 +111,13 @@ final class AuthController extends Controller
                 'username'            => $wallet->username,
                 'payout_address'      => $wallet->payout_address,
                 'holds_tzla'          => $wallet->holdsTzla(),
+                'has_staked'          => $wallet->hasStaked(),
                 'nft_count'           => $wallet->nftCount(),
                 'golden_ticket_count' => $wallet->goldenTicketCount(),
                 'can_play'            => $wallet->canPlay(),
             ],
-            'attempts_per_word' => $this->policy->attemptsAllowedPerWord($wallet),
+            'attempts_per_week' => $this->policy->attemptsAllowedPerWeek($wallet),
+            'attempts_per_word' => $this->policy->attemptsAllowedPerWeek($wallet),
         ];
     }
 }

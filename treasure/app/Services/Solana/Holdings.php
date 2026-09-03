@@ -10,10 +10,6 @@ final readonly class Holdings
         public float $tzlaBalance,
         public int $nftCount,
         public int $goldenTicketCount = 0,
+        public float $stakedAmount = 0.0,
     ) {}
-
-    public function holdsTzla(): bool
-    {
-        return $this->tzlaBalance > 0.0;
-    }
 }

@@ -7,16 +7,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Wallet;
 use App\Models\Week;
-use App\Models\WordCompletion;
 use App\Services\Guess\AttemptPolicy;
-use App\Services\Guess\GuessService;
+use App\Services\Guess\BundleGuessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 final class WeekController extends Controller
 {
     public function __construct(
-        private readonly GuessService $guesses,
+        private readonly BundleGuessService $bundles,
         private readonly AttemptPolicy $policy,
     ) {}
 
@@ -24,37 +23,32 @@ final class WeekController extends Controller
     {
         $wallet = $this->currentWallet($request);
 
-        // Inactive weeks are drafts. Listing them leaked upcoming titles and
-        // reward descriptions even though `show` correctly refuses to open them.
         $weeks = Week::query()
             ->where('active', true)
             ->withCount('words')
             ->orderBy('number')
             ->get();
 
-        $solvedByWeek = [];
-        if ($wallet !== null) {
-            $solvedByWeek = WordCompletion::query()
-                ->where('wallet_id', $wallet->id)
-                ->join('words', 'words.id', '=', 'word_completions.word_id')
-                ->selectRaw('words.week_id as week_id, COUNT(*) as solved')
-                ->groupBy('words.week_id')
-                ->pluck('solved', 'week_id')
-                ->all();
-        }
-
         return response()->json([
-            'weeks' => $weeks->map(fn (Week $week): array => [
-                'number' => $week->number,
-                'title' => $week->title,
-                'is_active' => (bool) $week->active,
-                'is_unlocked' => $week->isUnlocked(),
-                'starts_at' => $week->starts_at?->toIso8601String(),
-                'reward_description' => $week->reward_description,
-                'reward_claimed' => (bool) $week->reward_claimed,
-                'solved_word_count' => (int) ($solvedByWeek[$week->id] ?? 0),
-                'total_words' => (int) $week->words_count,
-            ])->values(),
+            'weeks' => $weeks->map(function (Week $week) use ($wallet): array {
+                $complete = $wallet
+                    ? $this->bundles->hasCompleted($wallet, $week)
+                    : false;
+
+                return [
+                    'number' => $week->number,
+                    'title' => $week->title,
+                    'is_active' => (bool) $week->active,
+                    'is_unlocked' => $week->isUnlocked(),
+                    'starts_at' => $week->starts_at?->toIso8601String(),
+                    'reward_description' => $week->reward_description,
+                    'reward_claimed' => (bool) $week->reward_claimed,
+                    // Blind: never expose partial progress as solved_word_count.
+                    'solved_word_count' => $complete ? (int) $week->words_count : 0,
+                    'week_complete' => $complete,
+                    'total_words' => (int) $week->words_count,
+                ];
+            })->values(),
         ]);
     }
 
@@ -69,30 +63,23 @@ final class WeekController extends Controller
         }
 
         $wallet = $this->currentWallet($request);
-        $attemptsAllowed = $wallet ? $this->policy->attemptsAllowedPerWord($wallet) : 0;
+        $attemptsAllowed = $wallet ? $this->policy->attemptsAllowedPerWeek($wallet) : 0;
+        $attemptsUsed = $wallet ? $this->bundles->attemptsUsed($wallet, $week) : 0;
+        $weekComplete = $wallet ? $this->bundles->hasCompleted($wallet, $week) : false;
 
-        $wordIds = $week->words->pluck('id')->all();
-        $solved   = $wallet ? $this->guesses->solvedWordIds($wallet, $wordIds) : [];
-        $attempts = $wallet ? $this->guesses->attemptCountsByWord($wallet, $wordIds) : [];
-
-        $words = $week->words->map(function ($word) use ($attemptsAllowed, $solved, $attempts): array {
-            $isSolved = isset($solved[$word->id]);
-            $used = (int) ($attempts[$word->id] ?? 0);
-
-            return [
+        // Blind until full clear: hints only. On complete, reveal answers.
+        $words = $week->words->sortBy('position')->values()->map(function ($word) use ($weekComplete): array {
+            $row = [
                 'position' => $word->position,
                 'hint' => $word->hint,
-                'is_solved' => $isSolved,
-                'solved_answer' => $isSolved ? $word->answer_normalized : null,
-                'attempts_used' => $used,
-                'attempts_allowed' => $attemptsAllowed,
-                'attempts_left' => max(0, $attemptsAllowed - $used),
             ];
-        });
+            if ($weekComplete) {
+                $row['is_solved'] = true;
+                $row['solved_answer'] = $word->answer_normalized;
+            }
 
-        $weekComplete = $wallet
-            ? $week->completions()->where('wallet_id', $wallet->id)->exists()
-            : false;
+            return $row;
+        });
 
         return response()->json([
             'number' => $week->number,
@@ -100,6 +87,10 @@ final class WeekController extends Controller
             'reward_description' => $week->reward_description,
             'is_unlocked' => true,
             'week_complete' => $weekComplete,
+            'attempts_used' => $attemptsUsed,
+            'attempts_allowed' => $attemptsAllowed,
+            'attempts_left' => max(0, $attemptsAllowed - $attemptsUsed),
+            'total_words' => $week->words->count(),
             'words' => $words,
             'wallet_connected' => $wallet !== null,
         ]);

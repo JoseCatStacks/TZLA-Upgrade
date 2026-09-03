@@ -23,9 +23,8 @@ Route::post('/solana/send', [GameConfigController::class, 'send'])->middleware('
 Route::get('/weeks', [WeekController::class, 'index']);
 Route::get('/weeks/{number}', [WeekController::class, 'show'])->whereNumber('number');
 
-Route::post('/weeks/{number}/words/{position}/guess', [GuessController::class, 'submit'])
+Route::post('/weeks/{number}/bundle', [GuessController::class, 'submitBundle'])
     ->whereNumber('number')
-    ->whereNumber('position')
     ->middleware('throttle:60,1');
 
 Route::post('/telegram/webhook', [BotController::class, 'webhook'])

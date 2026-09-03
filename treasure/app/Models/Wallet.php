@@ -19,6 +19,7 @@ final class Wallet extends Model
         'first_connected_at',
         'last_seen_at',
         'tzla_balance_cached',
+        'staked_amount_cached',
         'nft_count_cached',
         'golden_ticket_count_cached',
         'holdings_refreshed_at',
@@ -29,6 +30,7 @@ final class Wallet extends Model
         'last_seen_at' => 'datetime',
         'holdings_refreshed_at' => 'datetime',
         'tzla_balance_cached' => 'decimal:6',
+        'staked_amount_cached' => 'decimal:6',
         'nft_count_cached' => 'integer',
         'golden_ticket_count_cached' => 'integer',
     ];
@@ -36,6 +38,11 @@ final class Wallet extends Model
     public function guesses(): HasMany
     {
         return $this->hasMany(Guess::class);
+    }
+
+    public function bundleAttempts(): HasMany
+    {
+        return $this->hasMany(BundleAttempt::class);
     }
 
     public function wordCompletions(): HasMany
@@ -48,11 +55,26 @@ final class Wallet extends Model
         return $this->hasMany(WeekCompletion::class);
     }
 
+    public function tzlaBalance(): float
+    {
+        return (float) ($this->tzla_balance_cached ?? 0);
+    }
+
+    public function stakedAmount(): float
+    {
+        return (float) ($this->staked_amount_cached ?? 0);
+    }
+
+    public function hasStaked(): bool
+    {
+        return $this->stakedAmount() > 0;
+    }
+
     public function holdsTzla(): bool
     {
         $threshold = (float) config('game.play_gate.tzla_threshold', 9.0);
 
-        return (float) $this->tzla_balance_cached >= $threshold;
+        return $this->tzlaBalance() >= $threshold;
     }
 
     public function nftCount(): int
@@ -77,7 +99,10 @@ final class Wallet extends Model
 
     public function canPlay(): bool
     {
-        return $this->holdsGoldenTicket() || $this->holdsNft() || $this->holdsTzla();
+        return $this->holdsGoldenTicket()
+            || $this->holdsNft()
+            || $this->holdsTzla()
+            || $this->hasStaked();
     }
 
     public function shortAddress(): string

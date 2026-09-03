@@ -6,10 +6,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\SendTelegramMessage;
+use App\Models\FeePayment;
 use App\Models\Wallet;
 use App\Models\Week;
 use App\Services\Guess\AttemptPolicy;
-use App\Services\Guess\GuessService;
+use App\Services\Guess\BundleGuessService;
+use App\Services\Guess\FeeTier;
 use App\Services\Guess\SpamGuard;
 use App\Services\Solana\FeeLedger;
 use App\Services\Solana\FeeVerifier;
@@ -19,24 +21,30 @@ use Illuminate\Http\Request;
 final class GuessController extends Controller
 {
     public function __construct(
-        private readonly GuessService  $guesses,
-        private readonly FeeVerifier   $fees,
-        private readonly FeeLedger     $ledger,
-        private readonly SpamGuard     $spam,
+        private readonly BundleGuessService $bundles,
+        private readonly FeeVerifier $fees,
+        private readonly FeeLedger $ledger,
+        private readonly FeeTier $feeTier,
+        private readonly SpamGuard $spam,
         private readonly AttemptPolicy $policy,
     ) {}
 
-    public function submit(Request $request, int $weekNumber, int $position): JsonResponse
+    /**
+     * Submit all answers for a week in one paid attempt.
+     * Response only includes how many were correct — never which.
+     */
+    public function submitBundle(Request $request, int $weekNumber): JsonResponse
     {
         $data = $request->validate([
-            'guess'          => ['required', 'string', 'max:120'],
-            'fee_signature'  => ['required', 'string', 'max:128'],
-            'username'       => ['nullable', 'string', 'max:64'],
+            'answers' => ['required', 'array', 'min:1'],
+            'answers.*' => ['required', 'string', 'max:120'],
+            'fee_signature' => ['required', 'string', 'max:128'],
+            'username' => ['nullable', 'string', 'max:64'],
             'payout_address' => ['nullable', 'string', 'min:32', 'max:64'],
         ]);
 
         $walletId = $request->session()->get('wallet_id');
-        $wallet   = $walletId ? Wallet::find($walletId) : null;
+        $wallet = $walletId ? Wallet::find($walletId) : null;
         if ($wallet === null) {
             return response()->json(['error' => 'wallet_not_connected'], 401);
         }
@@ -45,8 +53,7 @@ final class GuessController extends Controller
             return response()->json(['error' => 'not_eligible'], 403);
         }
 
-        // ── Week / word resolution ───────────────────────────────────────────
-        $week = Week::query()->where('number', $weekNumber)->first();
+        $week = Week::query()->where('number', $weekNumber)->with('words')->first();
         if ($week === null) {
             return response()->json(['error' => 'week_not_found'], 404);
         }
@@ -54,36 +61,40 @@ final class GuessController extends Controller
             return response()->json(['error' => 'week_locked'], 403);
         }
 
-        $word = $week->words()->where('position', $position)->first();
-        if ($word === null) {
-            return response()->json(['error' => 'word_not_found'], 404);
+        $wordCount = $week->words->count();
+        if ($wordCount === 0) {
+            return response()->json(['error' => 'week_empty'], 422);
         }
 
-        // ── Refuse unplayable guesses BEFORE taking payment ──────────────────
-        // These used to be checked inside GuessService, after the fee had already
-        // been verified, so a player could be charged for a guess that was then
-        // silently discarded.
-        $attemptsAllowed = $this->policy->attemptsAllowedPerWord($wallet);
-        $attemptsUsed    = $this->guesses->attemptsUsedForWord($wallet, $word);
-
-        if ($this->guesses->hasSolved($wallet, $word)) {
+        // Answers may arrive as a list (index 0 = position 1) or a map of positions.
+        $answersByPosition = $this->normalizeAnswers($data['answers'], $wordCount);
+        if ($answersByPosition === null) {
             return response()->json([
-                'error'   => 'already_solved',
-                'message' => 'You have already solved this word. You have not been charged.',
+                'error' => 'incomplete_answers',
+                'message' => "Submit all {$wordCount} answers before playing.",
+            ], 422);
+        }
+
+        if ($this->bundles->hasCompleted($wallet, $week)) {
+            return response()->json([
+                'error' => 'already_completed',
+                'message' => 'You have already cleared this week. You have not been charged.',
             ], 409);
         }
+
+        $attemptsAllowed = $this->policy->attemptsAllowedPerWeek($wallet);
+        $attemptsUsed = $this->bundles->attemptsUsed($wallet, $week);
 
         if ($attemptsUsed >= $attemptsAllowed) {
             return response()->json([
-                'error'            => 'no_attempts_left',
-                'message'          => 'No attempts remaining for this word. You have not been charged.',
-                'attempts_used'    => $attemptsUsed,
+                'error' => 'no_attempts_left',
+                'message' => 'No bundle attempts remaining for this week. You have not been charged.',
+                'attempts_used' => $attemptsUsed,
                 'attempts_allowed' => $attemptsAllowed,
-                'attempts_left'    => 0,
+                'attempts_left' => 0,
             ], 409);
         }
 
-        // ── Spam / rate-limit check ──────────────────────────────────────────
         if (! $this->spam->isAllowed($wallet)) {
             $retryAfter = $this->spam->retryAfter($wallet);
 
@@ -95,9 +106,9 @@ final class GuessController extends Controller
             ));
 
             return response()->json([
-                'error'       => 'rate_limit_exceeded',
-                'message'     => sprintf(
-                    '⚠️ Slow down! Max %d word guesses per minute. Try again in %d seconds.',
+                'error' => 'rate_limit_exceeded',
+                'message' => sprintf(
+                    '⚠️ Slow down! Max %d submissions per minute. Try again in %d seconds.',
                     $this->spam->maxPerWindow(),
                     $retryAfter,
                 ),
@@ -105,16 +116,10 @@ final class GuessController extends Controller
             ], 429);
         }
 
-        // ── Tier-based fee verification ──────────────────────────────────────
         $feeSignature = trim($data['fee_signature']);
-
-        $expectedSol  = $wallet->holdsGoldenTicket()
-            ? (float) config('game.submission_fees.golden_ticket_sol', 0.03)
-            : (float) config('game.submission_fees.standard_sol',      0.06);
-
+        $expectedSol = $this->feeTier->amountSol($wallet);
         $toleranceSol = (int) config('game.submission_fees.tolerance_lamports', 1000) / 1_000_000_000;
 
-        // Cheap rejection before spending an RPC round-trip on a known-spent signature.
         if ($this->ledger->alreadySpent($feeSignature)) {
             return $this->replayResponse($expectedSol);
         }
@@ -123,71 +128,106 @@ final class GuessController extends Controller
 
         if ($paidSol === null || $paidSol < ($expectedSol - $toleranceSol)) {
             return response()->json([
-                'error'        => 'invalid_fee_payment',
-                'message'      => sprintf(
-                    'Payment not confirmed. Required: %s SOL (%s). Please send the correct amount to the treasury and include the transaction signature.',
+                'error' => 'invalid_fee_payment',
+                'message' => sprintf(
+                    'Payment not confirmed. Required: %s SOL (%s).',
                     rtrim(rtrim(number_format($expectedSol, 4, '.', ''), '0'), '.'),
-                    $wallet->holdsGoldenTicket() ? 'golden ticket rate' : 'standard rate',
+                    $this->feeTier->label($wallet),
                 ),
                 'required_sol' => $expectedSol,
-                'treasury'     => config('game.submission_fees.treasury_address'),
+                'treasury' => config('game.submission_fees.treasury_address'),
             ], 402);
         }
 
-        // ── Optional wallet metadata ─────────────────────────────────────────
-        $walletUpdates = array_filter([
-            'username'       => $data['username']       ?? null,
-            'payout_address' => $data['payout_address'] ?? null,
-        ], static fn ($v): bool => $v !== null && $v !== '');
-
-        // Claim before recording the guess. If the guess write fails, release the
-        // claim so the same payment can be retried safely.
-        if (! $this->ledger->claim($feeSignature, $wallet, $word, $paidSol)) {
+        if (! $this->ledger->claimForWeek($feeSignature, $wallet, $week, $paidSol)) {
             return $this->replayResponse($expectedSol);
         }
+
+        $walletUpdates = array_filter([
+            'username' => $data['username'] ?? null,
+            'payout_address' => $data['payout_address'] ?? null,
+        ], static fn ($v): bool => $v !== null && $v !== '');
 
         try {
             if ($walletUpdates !== []) {
                 $wallet->forceFill($walletUpdates)->save();
             }
 
-            $result = $this->guesses->submit($wallet, $word, $data['guess']);
+            $result = $this->bundles->submit($wallet, $week, $answersByPosition, $feeSignature);
         } catch (\Throwable $e) {
             report($e);
-            \App\Models\FeePayment::query()
+            FeePayment::query()
                 ->where('signature', $feeSignature)
                 ->where('wallet_id', $wallet->id)
                 ->delete();
 
             return response()->json([
-                'error'         => 'guess_failed_after_payment',
-                'message'       => 'Payment looked valid but the guess could not be saved. Tap submit again — we will reuse the same payment.',
+                'error' => 'guess_failed_after_payment',
+                'message' => 'Payment looked valid but the attempt could not be saved. Tap submit again — we will reuse the same payment.',
                 'fee_signature' => $feeSignature,
             ], 500);
         }
 
-        // ── Record spam-guard hit AFTER payment is confirmed ─────────────────
         $this->spam->record($wallet);
 
         return response()->json([
-            'is_correct'       => $result->isCorrect,
-            'attempts_used'    => $result->attemptsUsed,
-            'attempts_allowed' => $result->attemptsAllowed,
-            'attempts_left'    => $result->attemptsLeft(),
-            'solved_count'     => $result->solvedCount,
-            'total_words'      => $result->totalWords,
-            'week_complete'    => $result->weekComplete,
-            'fee_paid_sol'     => round($paidSol, 9),
+            'correct_count' => $result['correct_count'],
+            'total_words' => $result['total_words'],
+            'is_complete' => $result['is_complete'],
+            'attempts_used' => $result['attempts_used'],
+            'attempts_allowed' => $result['attempts_allowed'],
+            'attempts_left' => $result['attempts_left'],
+            'week_complete' => $result['is_complete'],
+            'fee_paid_sol' => round($paidSol, 9),
+            'fee_tier' => $this->feeTier->label($wallet),
         ]);
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $answers
+     * @return array<int, string>|null
+     */
+    private function normalizeAnswers(array $answers, int $wordCount): ?array
+    {
+        $byPosition = [];
+
+        $isList = array_keys($answers) === range(0, count($answers) - 1);
+        if ($isList) {
+            if (count($answers) !== $wordCount) {
+                return null;
+            }
+            foreach ($answers as $i => $raw) {
+                $trimmed = trim((string) $raw);
+                if ($trimmed === '') {
+                    return null;
+                }
+                $byPosition[$i + 1] = $trimmed;
+            }
+
+            return $byPosition;
+        }
+
+        for ($pos = 1; $pos <= $wordCount; $pos++) {
+            if (! array_key_exists($pos, $answers) && ! array_key_exists((string) $pos, $answers)) {
+                return null;
+            }
+            $trimmed = trim((string) ($answers[$pos] ?? $answers[(string) $pos]));
+            if ($trimmed === '') {
+                return null;
+            }
+            $byPosition[$pos] = $trimmed;
+        }
+
+        return $byPosition;
     }
 
     private function replayResponse(float $expectedSol): JsonResponse
     {
         return response()->json([
-            'error'        => 'fee_signature_already_used',
-            'message'      => 'That payment has already been used for a previous guess. Each guess requires its own payment.',
+            'error' => 'fee_signature_already_used',
+            'message' => 'That payment has already been used for a previous attempt. Each submission requires its own payment.',
             'required_sol' => $expectedSol,
-            'treasury'     => config('game.submission_fees.treasury_address'),
+            'treasury' => config('game.submission_fees.treasury_address'),
         ], 402);
     }
 }

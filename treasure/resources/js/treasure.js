@@ -76,7 +76,7 @@ function renderConnect() {
             <div class="wallet-pill">
                 <span class="wallet-dot" title="TZLA holder: ${state.wallet.holds_tzla ? 'yes' : 'no'}"></span>
                 <span class="wallet-addr">${shortAddr(state.wallet.address)}</span>
-                <span class="wallet-att">${state.attemptsPerWord} tries/word</span>
+                <span class="wallet-att">${state.attemptsPerWord} tries/week</span>
                 <button type="button" class="wallet-disc" data-action="disconnect">×</button>
             </div>
             <button type="button" class="htp-btn" data-action="open-htp" aria-label="How to Play">
@@ -206,8 +206,7 @@ function applyTint(el, w) {
     el.classList.remove('is-locked', 'is-partial', 'is-complete');
     if (!w) return;
     if (!w.is_unlocked) el.classList.add('is-locked');
-    else if (w.total_words > 0 && w.solved_word_count >= w.total_words) el.classList.add('is-complete');
-    else if (w.solved_word_count > 0) el.classList.add('is-partial');
+    else if (w.week_complete || (w.total_words > 0 && w.solved_word_count >= w.total_words)) el.classList.add('is-complete');
 }
 
 function renderWeekTints() {
@@ -221,7 +220,7 @@ async function refreshMe() {
     try {
         const data = await api('GET', '/api/auth/me');
         state.wallet = data.wallet;
-        state.attemptsPerWord = data.attempts_per_word || 0;
+        state.attemptsPerWord = data.attempts_per_week || data.attempts_per_word || 0;
     } catch { state.wallet = null; }
     renderConnect();
 }
@@ -234,14 +233,12 @@ async function refreshConfig() {
     }
 }
 
-/** SOL owed for the connected wallet's tier. */
+/** SOL owed for the connected wallet's tier (from game-config). */
 function currentFeeSol() {
     if (!state.config) return null;
-    const fees = state.config.fees || {};
-    if (state.wallet && (state.wallet.golden_ticket_count || 0) > 0) {
-        return fees.golden_ticket_sol;
-    }
-    return state.config.your_fee_sol ?? fees.standard_sol;
+    return state.config.your_fee_sol
+        ?? state.config.fees?.standard_sol
+        ?? null;
 }
 
 async function refreshWeeks() {
@@ -412,7 +409,7 @@ async function authenticateWallet(address, adapter) {
         address, nonce, signature: sigBase58,
     });
     state.wallet = verify.wallet;
-    state.attemptsPerWord = verify.attempts_per_word || 0;
+    state.attemptsPerWord = verify.attempts_per_week || verify.attempts_per_word || 0;
     renderConnect();
     await Promise.all([refreshConfig(), refreshWeeks()]);
 }
@@ -528,19 +525,26 @@ function renderWeekInPopup(week) {
     const body = $('#tzla-popup-body');
     const connected = week.wallet_connected;
     const eligible = connected && state.wallet && state.wallet.can_play !== false;
-    const rows = week.words.map(word => wordRow(week.number, word, connected, eligible)).join('');
+    const complete = !!week.week_complete;
+    const attemptsLeft = week.attempts_left ?? 0;
+    const canSubmit = eligible && !complete && attemptsLeft > 0;
 
     const fee = currentFeeSol();
     const paymentsOn = state.config ? state.config.payments_enabled !== false : true;
-    const feeNote = (eligible && fee !== null && paymentsOn)
-        ? `<div class="tzla-note">Each guess costs <strong>${formatSol(fee)} SOL</strong>, paid to the treasury from your wallet. You approve every payment in your wallet.</div>`
+    const tier = state.config?.your_fee_tier ? ` (${state.config.your_fee_tier})` : '';
+    const feeNote = (canSubmit && fee !== null && paymentsOn)
+        ? `<div class="tzla-note">Each attempt costs <strong>${formatSol(fee)} SOL</strong>${escape(tier)}. Fill all ${week.total_words || week.words.length} answers, then submit once. Ye only learn how many hit — not which.</div>`
         : '';
 
     const ineligibleNote = (connected && !eligible)
-        ? '<div class="tzla-note">This wallet is not eligible to play. Hold TZLA, an NFT, or a Golden Ticket.</div>'
+        ? '<div class="tzla-note">This wallet is not eligible to play. Hold TZLA, stake TZLA, hold an NFT, or a Golden Ticket.</div>'
         : '';
 
-    const profile = eligible ? `
+    const attemptsNote = connected && eligible && !complete
+        ? `<div class="tzla-note">${attemptsLeft}/${week.attempts_allowed ?? 0} attempts left this week.</div>`
+        : '';
+
+    const profile = canSubmit ? `
         <div class="tzla-profile">
             <input type="text" id="tzla-username" maxlength="64" placeholder="Display name (optional)"
                    value="${escape(state.wallet?.username || '')}" autocomplete="off" />
@@ -548,38 +552,65 @@ function renderWeekInPopup(week) {
                    value="${escape(state.wallet?.payout_address || '')}" autocomplete="off" />
         </div>` : '';
 
+    const rows = (week.words || []).map(word => {
+        if (complete && word.solved_answer) {
+            return `
+                <div class="tzla-word">
+                    <div class="tzla-word-head">
+                        <span class="tzla-word-n">Word ${word.position}</span>
+                        <span class="tzla-ok">Solved: ${escape(word.solved_answer)}</span>
+                    </div>
+                    <div class="tzla-hint">${word.hint ? escape(word.hint) : '<em>No hint provided.</em>'}</div>
+                </div>`;
+        }
+        return `
+            <div class="tzla-word" data-pos="${word.position}">
+                <div class="tzla-word-head">
+                    <span class="tzla-word-n">Word ${word.position}</span>
+                </div>
+                <div class="tzla-hint">${word.hint ? escape(word.hint) : '<em>No hint provided.</em>'}</div>
+                <div class="tzla-guess-row">
+                    <input type="text" name="answer-${word.position}" data-pos="${word.position}"
+                           placeholder="Yer answer…" ${canSubmit ? '' : 'disabled'} autocomplete="off" />
+                </div>
+            </div>`;
+    }).join('');
+
     body.innerHTML = `
         ${week.reward_description ? `<div class="tzla-reward">Reward: <em>${escape(week.reward_description)}</em></div>` : ''}
-        ${!connected ? '<div class="tzla-note">Connect a Solana wallet holding TZLA to submit guesses.</div>' : ''}
+        ${!connected ? '<div class="tzla-note">Connect a Solana wallet to submit a bundle.</div>' : ''}
         ${ineligibleNote}
+        ${attemptsNote}
         ${feeNote}
         ${profile}
-        <div class="tzla-words">${rows}</div>
-        ${week.week_complete ? '<div class="tzla-done">🏴‍☠️ Week completed. Reward payout is on its way.</div>' : ''}
+        <form class="tzla-bundle" data-week="${week.number}">
+            <div class="tzla-words">${rows}</div>
+            ${canSubmit ? `
+                <div class="tzla-guess-row" style="justify-content:center;margin-top:.8em">
+                    <button type="submit" aria-label="Submit bundle"><img src="/storage/submitbtn.png" alt="Submit" /></button>
+                </div>
+                <div class="tzla-word-status" id="tzla-bundle-status"></div>
+            ` : ''}
+        </form>
+        ${complete ? '<div class="tzla-done">🏴‍☠️ Week cleared. Yer name is on the bounty board — prize paid by hand.</div>' : ''}
     `;
-    $$('form.tzla-word', body).forEach(f => f.addEventListener('submit', onGuessSubmit));
+
+    const form = $('form.tzla-bundle', body);
+    if (form) {
+        form.addEventListener('submit', onBundleSubmit);
+        $$('input[data-pos]', form).forEach(input => {
+            input.addEventListener('input', () => updateBundleSubmitEnabled(form));
+        });
+        updateBundleSubmitEnabled(form);
+    }
 }
 
-function wordRow(weekNumber, word, connected, eligible = true) {
-    const disabled = word.is_solved || !connected || !eligible || word.attempts_left <= 0;
-    const status = word.is_solved
-        ? `<span class="tzla-ok">Solved: ${escape(word.solved_answer)}</span>`
-        : (connected
-            ? `<span class="tzla-tries">${word.attempts_left}/${word.attempts_allowed} tries left</span>`
-            : `<span class="tzla-tries">—</span>`);
-    return `
-        <form class="tzla-word" data-week="${weekNumber}" data-pos="${word.position}">
-            <div class="tzla-word-head">
-                <span class="tzla-word-n">Word ${word.position}</span>
-                ${status}
-            </div>
-            <div class="tzla-hint">${word.hint ? escape(word.hint) : '<em>No hint provided.</em>'}</div>
-            <div class="tzla-guess-row">
-                <input type="text" name="guess" placeholder="Yer answer…" ${disabled ? 'disabled' : ''} autocomplete="off" />
-                <button type="submit" aria-label="Submit" ${disabled ? 'disabled' : ''}><img src="/storage/submitbtn.png" alt="Submit" /></button>
-            </div>
-            <div class="tzla-word-status"></div>
-        </form>`;
+function updateBundleSubmitEnabled(form) {
+    const btn = form.querySelector('button[type=submit]');
+    if (!btn) return;
+    const inputs = $$('input[data-pos]', form);
+    const allFilled = inputs.length > 0 && inputs.every(i => (i.value || '').trim() !== '');
+    btn.disabled = !allFilled;
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -589,7 +620,6 @@ function formatSol(amount) {
     return String(parseFloat(Number(amount).toFixed(9)));
 }
 
-/** Optional payout details captured once per popup and sent with each guess. */
 function profileFields() {
     const username = ($('#tzla-username')?.value || '').trim();
     const payout = ($('#tzla-payout')?.value || '').trim();
@@ -600,13 +630,10 @@ function profileFields() {
 }
 
 /**
- * Pays the per-guess fee and returns the transaction signature. In local
- * development the backend runs the stub verifier, so no real transfer is made.
- *
- * If a prior attempt already paid for this word but the guess POST failed, we
- * reuse that signature instead of charging again.
+ * Pays the per-bundle fee. Reuses a pending signature if a prior submit failed
+ * after the wallet already paid.
  */
-async function obtainFeeSignature(status, weekNumber, position) {
+async function obtainFeeSignature(status, weekNumber) {
     if (!state.config) await refreshConfig();
 
     if (state.config && state.config.payments_enabled === false) {
@@ -616,7 +643,7 @@ async function obtainFeeSignature(status, weekNumber, position) {
         throw new PaymentError('Could not load payment settings. Try reloading.');
     }
 
-    const pending = readPendingFee(weekNumber, position);
+    const pending = readPendingFee(weekNumber, 0);
     if (pending) {
         status.className = 'tzla-word-status';
         status.textContent = 'Reusing your previous payment (no new charge)…';
@@ -645,7 +672,7 @@ async function obtainFeeSignature(status, weekNumber, position) {
         throw new PaymentError('Payment returned an unusable signature. Check your wallet before retrying.');
     }
 
-    writePendingFee(weekNumber, position, normalized);
+    writePendingFee(weekNumber, 0, normalized);
     return normalized;
 }
 
@@ -690,13 +717,13 @@ function clearPendingFee() {
  * it up, so retry that specific failure. Retrying is safe: the signature is only
  * consumed once verification actually succeeds.
  */
-async function submitGuessWithRetry(weekNumber, position, guess, feeSignature, status) {
-    const payload = { guess, fee_signature: feeSignature, ...profileFields() };
+async function submitBundleWithRetry(weekNumber, answers, feeSignature, status) {
+    const payload = { answers, fee_signature: feeSignature, ...profileFields() };
     const maxAttempts = 6;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-            return await api('POST', `/api/weeks/${weekNumber}/words/${position}/guess`, payload);
+            return await api('POST', `/api/weeks/${weekNumber}/bundle`, payload);
         } catch (err) {
             const awaitingConfirmation = err.status === 402 && err.code === 'invalid_fee_payment';
             if (!awaitingConfirmation || attempt === maxAttempts) throw err;
@@ -708,16 +735,22 @@ async function submitGuessWithRetry(weekNumber, position, guess, feeSignature, s
     }
 }
 
-async function onGuessSubmit(e) {
+async function onBundleSubmit(e) {
     e.preventDefault();
     const form = e.currentTarget;
     const weekNumber = parseInt(form.dataset.week, 10);
-    const position = parseInt(form.dataset.pos, 10);
-    const input = form.querySelector('input[name=guess]');
-    const button = form.querySelector('button');
-    const status = form.querySelector('.tzla-word-status');
-    const guess = (input.value || '').trim();
-    if (!guess) return;
+    const button = form.querySelector('button[type=submit]');
+    const status = $('#tzla-bundle-status') || form.querySelector('.tzla-word-status');
+    const inputs = $$('input[data-pos]', form);
+    const answers = inputs.map(i => (i.value || '').trim());
+
+    if (!answers.length || answers.some(a => !a)) {
+        if (status) {
+            status.className = 'tzla-word-status tzla-bad';
+            status.textContent = 'Fill every answer before submitting.';
+        }
+        return;
+    }
 
     if (!state.wallet) {
         status.className = 'tzla-word-status tzla-bad';
@@ -726,53 +759,45 @@ async function onGuessSubmit(e) {
     }
     if (state.wallet.can_play === false) {
         status.className = 'tzla-word-status tzla-bad';
-        status.textContent = 'This wallet does not hold enough TZLA, an NFT, or a Golden Ticket.';
+        status.textContent = 'This wallet is not eligible to play.';
         return;
     }
 
-    input.disabled = true;
-    button.disabled = true;
+    inputs.forEach(i => { i.disabled = true; });
+    if (button) button.disabled = true;
 
     try {
-        const feeSignature = await obtainFeeSignature(status, weekNumber, position);
-        const r = await submitGuessWithRetry(weekNumber, position, guess, feeSignature, status);
+        const feeSignature = await obtainFeeSignature(status, weekNumber);
+        const r = await submitBundleWithRetry(weekNumber, answers, feeSignature, status);
         clearPendingFee();
 
-        if (r.is_correct) {
+        if (r.is_complete) {
             status.className = 'tzla-word-status tzla-ok';
-            status.textContent = 'Correct! Locked in.';
+            status.textContent = `All ${r.correct_count}/${r.total_words} correct! Yer on the bounty board.`;
+            showToast('Week cleared!');
             await refreshWeeks();
-            if (r.week_complete) showToast('Week complete!');
             loadWeekIntoPopup(weekNumber);
             return;
         }
 
         status.className = 'tzla-word-status tzla-bad';
-        status.textContent = `Nay. ${r.attempts_left} tries left.`;
-        const tries = form.querySelector('.tzla-tries');
-        if (tries) tries.textContent = `${r.attempts_left}/${r.attempts_allowed} tries left`;
-
+        status.textContent = `${r.correct_count}/${r.total_words} correct. ${r.attempts_left} attempts left.`;
         if (r.attempts_left > 0) {
-            input.disabled = false;
-            button.disabled = false;
-            input.value = '';
-            input.focus();
+            inputs.forEach(i => { i.disabled = false; });
+            updateBundleSubmitEnabled(form);
         }
+        await refreshWeeks();
     } catch (err) {
         status.className = 'tzla-word-status tzla-bad';
         status.textContent = guessErrorMessage(err);
 
-        // Anything other than a spent attempt leaves the player free to retry.
-        // Pending fee signature is kept so retry does not charge again.
-        const attemptConsumed = err.code === 'no_attempts_left' || err.code === 'already_solved';
-        if (err.code === 'fee_signature_already_used') {
-            clearPendingFee();
+        if (err.code === 'fee_signature_already_used') clearPendingFee();
+        const fatal = err.code === 'no_attempts_left' || err.code === 'already_completed';
+        if (!fatal) {
+            inputs.forEach(i => { i.disabled = false; });
+            updateBundleSubmitEnabled(form);
         }
-        if (!attemptConsumed) {
-            input.disabled = false;
-            button.disabled = false;
-        }
-        if (err.code === 'already_solved' || err.code === 'no_attempts_left') {
+        if (fatal) {
             clearPendingFee();
             loadWeekIntoPopup(weekNumber);
         }
@@ -781,15 +806,18 @@ async function onGuessSubmit(e) {
 
 function guessErrorMessage(err) {
     if (err instanceof PaymentError) {
-        return err.cancelled ? 'Payment cancelled — no guess submitted.' : err.message;
+        return err.cancelled ? 'Payment cancelled — no attempt submitted.' : err.message;
     }
     if (err.status === 401) return 'Connect wallet first.';
-    if (err.status === 429) return err.message || 'Too many guesses. Slow down.';
+    if (err.status === 429) return err.message || 'Too many submissions. Slow down.';
     if (err.code === 'fee_signature_already_used') {
-        return 'That payment was already used. Each guess needs its own payment.';
+        return 'That payment was already used. Each attempt needs its own payment.';
     }
     if (err.code === 'invalid_fee_payment') {
         return 'Payment not confirmed yet. Tap submit again — we will reuse the same payment, not charge twice.';
+    }
+    if (err.code === 'incomplete_answers') {
+        return err.message || 'Fill every answer before submitting.';
     }
     return err.message || 'Submission failed.';
 }

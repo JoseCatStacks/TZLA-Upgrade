@@ -6,14 +6,12 @@ namespace App\Services\Solana;
 
 use App\Models\FeePayment;
 use App\Models\Wallet;
+use App\Models\Week;
 use App\Models\Word;
 use Illuminate\Database\UniqueConstraintViolationException;
 
 /**
  * Tracks which on-chain fee transactions have already been spent.
- *
- * Without this, a player could pay once and replay the same transaction
- * signature on every subsequent guess.
  */
 final class FeeLedger
 {
@@ -22,13 +20,25 @@ final class FeeLedger
         return FeePayment::query()->where('signature', $signature)->exists();
     }
 
-    /**
-     * Atomically claim a signature for this guess.
-     *
-     * Returns false when the signature was already spent. The unique index on
-     * `signature` is what makes this safe against two concurrent requests
-     * submitting the same transaction.
-     */
+    public function claimForWeek(string $signature, Wallet $wallet, Week $week, float $amountSol): bool
+    {
+        try {
+            FeePayment::create([
+                'signature'  => $signature,
+                'wallet_id'  => $wallet->id,
+                'week_id'    => $week->id,
+                'word_id'    => null,
+                'amount_sol' => $amountSol,
+                'created_at' => now(),
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /** @deprecated per-word guesses; prefer claimForWeek */
     public function claim(string $signature, Wallet $wallet, Word $word, float $amountSol): bool
     {
         try {

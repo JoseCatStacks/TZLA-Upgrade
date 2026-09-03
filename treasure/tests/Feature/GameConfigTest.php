@@ -16,7 +16,8 @@ final class GameConfigTest extends TestCase
     {
         config([
             'game.submission_fees.treasury_address' => 'TreasuryAddress11111111111111111111111111',
-            'game.submission_fees.standard_sol' => 0.06,
+            'game.submission_fees.standard_sol' => 0.09,
+            'game.submission_fees.mid_sol' => 0.06,
             'game.submission_fees.golden_ticket_sol' => 0.03,
         ]);
 
@@ -24,8 +25,12 @@ final class GameConfigTest extends TestCase
             ->assertOk()
             ->assertJson([
                 'treasury_address' => 'TreasuryAddress11111111111111111111111111',
-                'fees' => ['standard_sol' => 0.06, 'golden_ticket_sol' => 0.03],
-                'your_fee_sol' => 0.06,
+                'fees' => [
+                    'standard_sol' => 0.09,
+                    'mid_sol' => 0.06,
+                    'golden_ticket_sol' => 0.03,
+                ],
+                'your_fee_sol' => 0.09,
             ]);
     }
 

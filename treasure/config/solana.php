@@ -34,4 +34,10 @@ return [
 
     'nonce_ttl' => (int) env('SOLANA_NONCE_TTL', 300),
 
+    // Used to detect staked TZLA for fee tiers / eligibility.
+    'staking' => [
+        'program_id' => env('STAKING_PROGRAM_ID', '3pFCija5VgaUxJgoKMoGRCk79c2pkEgUA9NBzRPo8xjJ'),
+        'pool_address' => env('STAKING_POOL_ADDRESS', '2yYgVz8CDzvMFYZ2cfMy854RETrafVYSAAaUUJw9bAVV'),
+    ],
+
 ];

@@ -11,6 +11,7 @@ use App\Services\Solana\FeeVerifier;
 use App\Services\Solana\HeliusFeeVerifier;
 use App\Services\Solana\HeliusHoldingsVerifier;
 use App\Services\Solana\HoldingsVerifier;
+use App\Services\Solana\StakePositionReader;
 use App\Services\Solana\StubFeeVerifier;
 use App\Services\Solana\StubHoldingsVerifier;
 use App\Services\Wallet\NonceService;
@@ -21,6 +22,14 @@ final class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->singleton(StakePositionReader::class, fn ($app): StakePositionReader => new StakePositionReader(
+            apiKey: (string) config('solana.helius.api_key'),
+            rpcUrl: (string) config('solana.helius.rpc_url'),
+            programId: (string) config('solana.staking.program_id'),
+            poolAddress: (string) config('solana.staking.pool_address'),
+            commitment: (string) config('solana.commitment', 'confirmed'),
+        ));
+
         $this->app->singleton(HoldingsVerifier::class, function ($app): HoldingsVerifier {
             return match ($this->solanaProvider()) {
                 'helius' => new HeliusHoldingsVerifier(
@@ -31,6 +40,7 @@ final class AppServiceProvider extends ServiceProvider
                     goldenTicketClassicCollection: config('solana.golden_ticket_classic_collection'),
                     goldenTicketCnftCollection: config('solana.golden_ticket_cnft_collection'),
                     cacheTtl: (int) config('solana.holdings_cache_ttl', 300),
+                    stakeReader: $app->make(StakePositionReader::class),
                 ),
                 default => new StubHoldingsVerifier,
             };
