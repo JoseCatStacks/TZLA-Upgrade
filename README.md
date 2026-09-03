@@ -1,8 +1,14 @@
-# TZLA Staking Upgrade
+# TZLA Website
 
-Rebuilt staking website + patched Solana program for the live TZLA pool.
+One product site (Treasure / Staking / NFT / Swap tabs). Two Laravel apps in this repo:
 
-**GitHub (Jose):** https://github.com/JoseCatStacks/TZLA-Upgrade
+| Part | Folder | What it is |
+|------|--------|------------|
+| **Portal + Staking** | repo root | Nav, Staking tab, embeds Treasure when configured |
+| **Treasure Hunt** | [`treasure/`](./treasure/) | Weekly word game (patched — guesses actually pay + submit) |
+| **On-chain staking program** | [`onchain/`](./onchain/) | Upgrade so unstake isn’t blocked by empty reward vault |
+
+**GitHub:** https://github.com/JoseCatStacks/TZLA-Upgrade
 
 ---
 
@@ -10,22 +16,39 @@ Rebuilt staking website + patched Solana program for the live TZLA pool.
 
 | If you want to… | Read this |
 |-----------------|-----------|
-| **Upgrade the on-chain program** (unstake without empty vault) | [`UPGRADE.md`](./UPGRADE.md) |
-| **Run the website locally** | Steps below |
-| **Understand the codebase** | [`OVERVIEW.md`](./OVERVIEW.md) |
+| **Run staking / portal** | [Run staking](#run-staking--portal) below |
+| **Run treasure hunt** | [`treasure/HANDOFF.md`](./treasure/HANDOFF.md) |
+| **Upgrade the staking program** | [`UPGRADE.md`](./UPGRADE.md) |
+| **Staking codebase notes** | [`OVERVIEW.md`](./OVERVIEW.md) |
 
 ---
 
-## What’s broken on mainnet today
+## How the Treasure tab works
 
-Unstake tries to pay **all pending rewards** from the reward vault in the **same transaction**. The vault is nearly empty (~2 TZLA), so most wallets cannot exit.
+The nav **Treasure** tab loads the hunt app via iframe when set:
 
-### What this repo fixes (after program upgrade)
+```env
+PORTAL_TREASURE_URL=https://your-treasure-domain.com
+```
 
-1. **Unstake = principal only** — no longer blocked by an empty treasury  
-2. **Claim Rewards = separate button** — pays from the vault when funded  
-3. **Empty vault never traps deposits** — claim pays `min(pending, vault balance)`  
-4. **Wallet connect** — Phantom, Solflare, and other Solana wallets (desktop + mobile)
+Until that URL is set and the hunt is deployed, the tab shows “coming soon.”
+
+---
+
+## What’s broken on mainnet (staking)
+
+Unstake tries to pay **all pending rewards** from the reward vault in the **same transaction**. The vault is nearly empty, so most wallets cannot exit.
+
+### Fixed after program upgrade (`UPGRADE.md`)
+
+1. **Unstake = principal only**
+2. **Claim Rewards** = separate instruction / button
+3. Empty vault never traps deposits
+4. Multi-wallet connect (Phantom, Solflare, mobile)
+
+### Treasure hunt (already fixed in `treasure/`)
+
+Guesses failed because the client never sent a fee payment; plus fee-replay and related bugs. See [`treasure/HANDOFF.md`](./treasure/HANDOFF.md). Deploy that app + set `PORTAL_TREASURE_URL` — **no Solana program upgrade** for treasure.
 
 ---
 
@@ -42,13 +65,14 @@ Unstake tries to pay **all pending rewards** from the reward vault in the **same
 
 ---
 
-## Run the website
+## Run staking / portal
 
-**Needs:** PHP 8.3+, Composer, Node 20+, a Helius API key ([dashboard.helius.dev](https://dashboard.helius.dev))
+**Needs:** PHP 8.3+, Composer, Node 20+, Helius API key
 
 ```bash
 cp .env.example .env
-# put your HELIUS_API_KEY in .env
+# HELIUS_API_KEY=...
+# PORTAL_TREASURE_URL=http://127.0.0.1:8399   # optional local hunt URL
 
 composer install
 php artisan key:generate
@@ -60,23 +84,38 @@ npm run build
 php artisan serve
 ```
 
-Open: http://127.0.0.1:8000/staking
+Open: http://127.0.0.1:8000/staking  
 
-Optional — sync live positions into the local DB:
-
-```bash
-php artisan staking:backfill
-```
-
-**Never commit `.env`.** Use your own Helius key; do not reuse a shared one in production.
+Optional: `php artisan staking:backfill`
 
 ---
 
-## Upgrade the program (Jose)
+## Run treasure hunt
 
-Use the **TZLA26Br…** wallet. Full steps: **[`UPGRADE.md`](./UPGRADE.md)**
+```bash
+cd treasure
+cp .env.example .env
+# SOLANA_PROVIDER=helius
+# HELIUS_API_KEY=...
+# GAME_TREASURY_ADDRESS=...
+# SOLANA_TZLA_MINT=4tWMJCW6tdpVUkwDpX1NEQURbtuQDg7H9DfkjEpGnq5D
+# SOLANA_NFT_COLLECTION=8cTpLj5JkptcbYfonkRWMaa7MRAsrqqxHQYKz6J1rTQw
 
-Short version:
+composer install
+php artisan key:generate
+touch database/database.sqlite
+php artisan migrate --seed
+npm install && npm run build
+php artisan serve --port=8399
+```
+
+Details + security notes: **[`treasure/HANDOFF.md`](./treasure/HANDOFF.md)**
+
+---
+
+## Upgrade the staking program (Jose)
+
+Wallet: **`TZLA26Br…`**. Full steps: **[`UPGRADE.md`](./UPGRADE.md)**
 
 ```bash
 cd onchain
@@ -84,40 +123,24 @@ anchor build
 anchor upgrade target/deploy/sol_stake.so --program-id 3pFCija5VgaUxJgoKMoGRCk79c2pkEgUA9NBzRPo8xjJ
 ```
 
-Then fund the reward vault when you want claims paid (~12.7k TZLA owed at last audit).
-
-After upgrade, rebuild the site frontend (`npm run build`) so **Claim Rewards** matches the new instruction.
-
----
-
-## After upgrade — how users use it
-
-| Button | What it does |
-|--------|----------------|
-| **Claim Rewards** | Pays accrued TZLA from the reward vault (up to vault balance) |
-| **Weigh Anchor (Unstake)** | Returns staked TZLA only — does not need the treasury |
-
-Claim **before** unstaking if you want rewards. Unstake resets the accrual timer.
+Then fund the reward vault when claims should pay out.
 
 ---
 
 ## Repo layout
 
 ```
-onchain/programs/sol_stake/   ← Anchor program (claim_rewards + safe unstake)
-app/                          ← Laravel API / jobs
-resources/js/staking.ts       ← wallet connect, stake / unstake / claim
-resources/js/wallets.ts       ← multi-wallet picker
-resources/js/mobile-wallet.ts ← iPhone / Android wallet deep links
-config/staking.php            ← mainnet addresses
-UPGRADE.md                    ← program deploy steps
+app/ resources/ …     ← portal + staking site (root)
+onchain/              ← Anchor program patch
+treasure/             ← patched treasure hunt app
+UPGRADE.md            ← staking program deploy
+treasure/HANDOFF.md   ← treasure deploy + what was fixed
 ```
 
 ---
 
-## Safety checklist before push / deploy
+## Safety
 
-- [ ] `.env` is **not** in git (listed in `.gitignore`)
-- [ ] No Helius / private keys in the commit
-- [ ] Jose’s `TZLA26Br` key is the only wallet that can upgrade
-- [ ] Do **not** make the program immutable until this upgrade is live and tested
+- Never commit `.env` (root or `treasure/`)
+- Use Jose’s own Helius key in production
+- Do **not** make the staking program immutable until the upgrade is live and tested
