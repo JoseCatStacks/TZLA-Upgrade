@@ -19,6 +19,7 @@ final class BundleGuessService
         private readonly GuessNormalizer $normalizer,
         private readonly AttemptPolicy $policy,
         private readonly WinnerLogger $winnerLogger,
+        private readonly PrizeLadder $prizes,
     ) {}
 
     public function attemptsUsed(Wallet $wallet, Week $week): int
@@ -71,9 +72,10 @@ final class BundleGuessService
         }
 
         $isComplete = $total > 0 && $correct === $total;
+        $completion = null;
 
         DB::transaction(function () use (
-            $wallet, $week, $words, $correct, $total, $isComplete, $normalizedAnswers, $feeSignature
+            $wallet, $week, $words, $correct, $total, $isComplete, $normalizedAnswers, $feeSignature, &$completion
         ): void {
             BundleAttempt::create([
                 'wallet_id' => $wallet->id,
@@ -107,22 +109,20 @@ final class BundleGuessService
                 );
             }
 
-            WeekCompletion::firstOrCreate(
+            $completion = WeekCompletion::firstOrCreate(
                 ['wallet_id' => $wallet->id, 'week_id' => $week->id],
                 ['completed_at' => now()],
             );
         });
 
-        if ($isComplete) {
-            $this->winnerLogger->record($wallet, $week);
-
-            SendTelegramMessage::dispatch(sprintf(
-                '[TZLA] 🏴‍☠️ Wallet %s COMPLETED week %d — username=%s payout=%s',
-                $wallet->shortAddress(),
-                $week->number,
-                $wallet->username ?: '—',
-                $wallet->payout_address ?: $wallet->address,
-            ));
+        if ($isComplete && $completion instanceof WeekCompletion && $completion->wasRecentlyCreated) {
+            $wallet->refresh();
+            $place = $this->prizes->placeFor($completion);
+            $prizeXmr = $this->prizes->prizeXmr($place);
+            $this->winnerLogger->record($wallet, $week, $place, $prizeXmr);
+            SendTelegramMessage::dispatch(
+                $this->prizes->telegramMessage($wallet, $week, $place, $prizeXmr)
+            );
         }
 
         return [

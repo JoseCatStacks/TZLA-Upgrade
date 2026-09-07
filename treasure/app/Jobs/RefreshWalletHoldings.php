@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Models\Wallet;
-use App\Services\Solana\HoldingsVerifier;
+use App\Services\Solana\WalletHoldingsSync;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -23,17 +23,9 @@ final class RefreshWalletHoldings implements ShouldQueue
 
     public function __construct(public readonly Wallet $wallet) {}
 
-    public function handle(HoldingsVerifier $verifier): void
+    public function handle(WalletHoldingsSync $sync): void
     {
-        $holdings = $verifier->holdings($this->wallet->address);
-
-        $this->wallet->forceFill([
-            'tzla_balance_cached'        => $holdings->tzlaBalance,
-            'staked_amount_cached'       => $holdings->stakedAmount,
-            'nft_count_cached'           => $holdings->nftCount,
-            'golden_ticket_count_cached' => $holdings->goldenTicketCount,
-            'holdings_refreshed_at'      => now(),
-        ])->save();
+        $sync->refresh($this->wallet);
     }
 
     public function failed(\Throwable $e): void

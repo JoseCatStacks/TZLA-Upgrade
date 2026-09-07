@@ -6,16 +6,16 @@ return [
 
     'play_gate' => [
         'tzla_threshold' => (float) env('GAME_TZLA_THRESHOLD', 9.0),
-        // Liquid TZLA at or above this gets the mid fee tier (with NFT / staked).
+        // Eligibility only. Liquid TZLA at this amount does not change the fee.
         'tzla_mid_threshold' => (float) env('GAME_TZLA_MID_THRESHOLD', 33.0),
         'require_holdings' => true,
     ],
 
     'submission_fees' => [
         // Bundle fee tiers (lowest / best wins):
-        //   golden ticket                         → golden_ticket_sol
-        //   NFT | staked | liquid TZLA ≥ mid      → mid_sol
-        //   otherwise eligible                    → standard_sol
+        //   golden ticket              → golden_ticket_sol
+        //   NFT | staked TZLA          → mid_sol
+        //   eligible TZLA holder       → standard_sol
         'golden_ticket_sol' => (float) env('GAME_FEE_GOLDEN_TICKET_SOL', 0.03),
         'mid_sol'           => (float) env('GAME_FEE_MID_SOL', 0.06),
         'standard_sol'      => (float) env('GAME_FEE_STANDARD_SOL', 0.09),
@@ -58,6 +58,21 @@ return [
 
     'winners' => [
         'log_channel' => env('GAME_WINNERS_LOG_CHANNEL', 'winners'),
+    ],
+
+    /*
+    | First N to fully clear a week are paid by hand (Jose). The app only
+    | records place + prize — it never moves XMR.
+    */
+    'prizes' => [
+        'paid_places' => (int) env('GAME_PRIZE_PAID_PLACES', 5),
+        'xmr' => [
+            1 => (float) env('GAME_PRIZE_XMR_1', 0.6),
+            2 => (float) env('GAME_PRIZE_XMR_2', 0.3),
+            3 => (float) env('GAME_PRIZE_XMR_3', 0.2),
+            4 => (float) env('GAME_PRIZE_XMR_4', 0.1),
+            5 => (float) env('GAME_PRIZE_XMR_5', 0.1),
+        ],
     ],
 
 ];

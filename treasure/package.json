@@ -4,7 +4,7 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "dev": "concurrently --names \"vite,php,queue,bot\" --prefix-colors \"cyan,green,yellow,magenta\" \"vite\" \"php artisan serve\" \"php artisan queue:work --tries=3\" \"php artisan telegram:poll\""
+        "dev": "concurrently --names \"vite,php,queue,bot\" --prefix-colors \"cyan,green,yellow,magenta\" \"vite\" \"php artisan serve --host=127.0.0.1 --port=8399\" \"php artisan queue:work --tries=3\" \"php artisan telegram:poll\""
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.0.0",

@@ -39,8 +39,6 @@ final class GuessController extends Controller
             'answers' => ['required', 'array', 'min:1'],
             'answers.*' => ['required', 'string', 'max:120'],
             'fee_signature' => ['required', 'string', 'max:128'],
-            'username' => ['nullable', 'string', 'max:64'],
-            'payout_address' => ['nullable', 'string', 'min:32', 'max:64'],
         ]);
 
         $walletId = $request->session()->get('wallet_id');
@@ -51,6 +49,13 @@ final class GuessController extends Controller
 
         if (! $wallet->canPlay()) {
             return response()->json(['error' => 'not_eligible'], 403);
+        }
+
+        if (! $wallet->hasPayoutProfile()) {
+            return response()->json([
+                'error' => 'profile_incomplete',
+                'message' => 'Set a username and Monero address before playing. You have not been charged.',
+            ], 403);
         }
 
         $week = Week::query()->where('number', $weekNumber)->with('words')->first();
@@ -144,16 +149,7 @@ final class GuessController extends Controller
             return $this->replayResponse($expectedSol);
         }
 
-        $walletUpdates = array_filter([
-            'username' => $data['username'] ?? null,
-            'payout_address' => $data['payout_address'] ?? null,
-        ], static fn ($v): bool => $v !== null && $v !== '');
-
         try {
-            if ($walletUpdates !== []) {
-                $wallet->forceFill($walletUpdates)->save();
-            }
-
             $result = $this->bundles->submit($wallet, $week, $answersByPosition, $feeSignature);
         } catch (\Throwable $e) {
             report($e);

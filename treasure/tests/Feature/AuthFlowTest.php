@@ -45,6 +45,51 @@ final class AuthFlowTest extends TestCase
         $this->assertTrue($verifyRes['wallet']['holds_tzla']);
         $this->assertSame(2, $verifyRes['wallet']['nft_count']);
         $this->assertSame(3, $verifyRes['attempts_per_word']); // 1 (tzla) + 2 (nfts)
+        $this->assertFalse($verifyRes['wallet']['profile_complete']);
+    }
+
+    public function test_profile_saves_username_and_xmr(): void
+    {
+        $kp = new PhantomKeypair;
+        $nonce = $this->postJson('/api/auth/nonce', ['address' => $kp->address])->json();
+        $this->postJson('/api/auth/verify', [
+            'address' => $kp->address,
+            'nonce' => $nonce['nonce'],
+            'signature' => $kp->signBase58($nonce['message']),
+        ])->assertOk();
+
+        $xmr = '4'.str_repeat('A', 94);
+        $this->postJson('/api/auth/profile', [
+            'username' => 'jose-watch',
+            'payout_address' => $xmr,
+        ])->assertOk()
+            ->assertJsonPath('wallet.username', 'jose-watch')
+            ->assertJsonPath('wallet.payout_address', $xmr)
+            ->assertJsonPath('wallet.profile_complete', true);
+    }
+
+    public function test_profile_rejects_invalid_xmr(): void
+    {
+        $kp = new PhantomKeypair;
+        $nonce = $this->postJson('/api/auth/nonce', ['address' => $kp->address])->json();
+        $this->postJson('/api/auth/verify', [
+            'address' => $kp->address,
+            'nonce' => $nonce['nonce'],
+            'signature' => $kp->signBase58($nonce['message']),
+        ])->assertOk();
+
+        $this->postJson('/api/auth/profile', [
+            'username' => 'jose-watch',
+            'payout_address' => 'not-an-xmr-address',
+        ])->assertStatus(422);
+    }
+
+    public function test_profile_requires_connected_wallet(): void
+    {
+        $this->postJson('/api/auth/profile', [
+            'username' => 'ghost',
+            'payout_address' => '4'.str_repeat('A', 94),
+        ])->assertStatus(401);
     }
 
     public function test_replay_of_same_nonce_rejected(): void

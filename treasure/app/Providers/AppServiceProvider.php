@@ -76,11 +76,14 @@ final class AppServiceProvider extends ServiceProvider
         ));
 
         $this->app->singleton(TelegramNotifier::class, fn ($app): TelegramNotifier => new TelegramNotifier(
-            enabled: (bool) config('telegram.enabled', false),
+            enabled: (bool) config('telegram.enabled', false) && ! $app->environment('testing'),
             botToken: config('telegram.bot_token'),
-            chatId: config('telegram.chat_id'),
+            chatId: config('telegram.chat_id') !== null ? (string) config('telegram.chat_id') : null,
             apiBase: (string) config('telegram.api_base', 'https://api.telegram.org'),
             timeout: (int) config('telegram.timeout', 5),
+            messageThreadId: ($thread = config('telegram.message_thread_id')) !== null && $thread !== ''
+                ? (int) $thread
+                : null,
         ));
     }
 

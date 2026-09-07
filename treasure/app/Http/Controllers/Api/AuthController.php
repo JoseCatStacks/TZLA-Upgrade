@@ -7,9 +7,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Wallet;
 use App\Services\Guess\AttemptPolicy;
-use App\Services\Solana\HoldingsVerifier;
+use App\Services\Solana\WalletHoldingsSync;
 use App\Services\Wallet\NonceService;
 use App\Services\Wallet\SignatureVerifier;
+use App\Services\Wallet\XmrAddress;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -19,7 +20,7 @@ final class AuthController extends Controller
     public function __construct(
         private readonly NonceService $nonces,
         private readonly SignatureVerifier $signatures,
-        private readonly HoldingsVerifier $holdingsVerifier,
+        private readonly WalletHoldingsSync $holdingsSync,
         private readonly AttemptPolicy $policy,
     ) {}
 
@@ -62,20 +63,36 @@ final class AuthController extends Controller
         );
         $wallet->forceFill(['last_seen_at' => now()])->save();
 
-        // Always re-check on connect so a stub→helius switch (or a recent stake)
-        // is visible immediately instead of waiting out the cache window.
         Cache::forget("holdings:{$wallet->address}");
-        $holdings = $this->holdingsVerifier->holdings($wallet->address);
-        $wallet->forceFill([
-            'tzla_balance_cached'        => $holdings->tzlaBalance,
-            'staked_amount_cached'       => $holdings->stakedAmount,
-            'nft_count_cached'           => $holdings->nftCount,
-            'golden_ticket_count_cached' => $holdings->goldenTicketCount,
-            'holdings_refreshed_at'      => now(),
-        ])->save();
+        $this->holdingsSync->refresh($wallet);
 
         $request->session()->regenerate();
         $request->session()->put('wallet_id', $wallet->id);
+
+        return response()->json($this->walletPayload($wallet));
+    }
+
+    public function profile(Request $request): JsonResponse
+    {
+        $walletId = $request->session()->get('wallet_id');
+        $wallet = $walletId ? Wallet::find($walletId) : null;
+        if ($wallet === null) {
+            return response()->json(['error' => 'wallet_not_connected'], 401);
+        }
+
+        $data = $request->validate([
+            'username' => ['required', 'string', 'min:2', 'max:64'],
+            'payout_address' => ['required', 'string', 'max:110', function (string $attribute, mixed $value, \Closure $fail): void {
+                if (! is_string($value) || ! XmrAddress::isValid($value)) {
+                    $fail('Enter a valid Monero (XMR) receiving address.');
+                }
+            }],
+        ]);
+
+        $wallet->forceFill([
+            'username' => trim($data['username']),
+            'payout_address' => trim($data['payout_address']),
+        ])->save();
 
         return response()->json($this->walletPayload($wallet));
     }
@@ -100,6 +117,8 @@ final class AuthController extends Controller
             return response()->json(['wallet' => null]);
         }
 
+        $this->holdingsSync->refresh($wallet);
+
         return response()->json($this->walletPayload($wallet));
     }
 
@@ -112,10 +131,13 @@ final class AuthController extends Controller
                 'short'               => $wallet->shortAddress(),
                 'username'            => $wallet->username,
                 'payout_address'      => $wallet->payout_address,
+                'profile_complete'    => $wallet->hasPayoutProfile(),
                 'holds_tzla'          => $wallet->holdsTzla(),
                 'has_staked'          => $wallet->hasStaked(),
                 'nft_count'           => $wallet->nftCount(),
                 'golden_ticket_count' => $wallet->goldenTicketCount(),
+                'tzla_balance'        => $wallet->tzlaBalance(),
+                'staked_amount'       => $wallet->stakedAmount(),
                 'can_play'            => $wallet->canPlay(),
             ],
             'attempts_per_week' => $this->policy->attemptsAllowedPerWeek($wallet),

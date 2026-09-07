@@ -21,7 +21,7 @@ class WeekSeeder extends Seeder
                 'number' => 1,
                 'title' => "Cap'n's Welcome",
                 'starts_at' => Carbon::now()->subDays(28),
-                'reward_description' => '1 SOL and a swig of grog',
+                'reward_description' => 'First 5 to solve — 0.6 / 0.3 / 0.2 / 0.1 / 0.1 XMR, paid by hand',
                 'words' => [
                     ['answer' => 'parrot', 'hint' => 'A feathered mimic that rides upon a pirate’s shoulder.'],
                     ['answer' => 'compass', 'hint' => 'A brass friend that ever points to the true north.'],
@@ -32,7 +32,7 @@ class WeekSeeder extends Seeder
                 'number' => 2,
                 'title' => 'Salt & Sail',
                 'starts_at' => Carbon::now()->subDays(21),
-                'reward_description' => 'A rare TZLA charm NFT',
+                'reward_description' => 'First 5 to solve — 0.6 / 0.3 / 0.2 / 0.1 / 0.1 XMR, paid by hand',
                 'words' => [
                     ['answer' => 'anchor', 'hint' => 'Iron kiss that holds a ship still against the tide.'],
                     ['answer' => 'lagoon', 'hint' => 'A shallow blue eye of the sea, ringed by land.'],
@@ -43,7 +43,7 @@ class WeekSeeder extends Seeder
                 'number' => 3,
                 'title' => 'Ghosts of the Deep',
                 'starts_at' => Carbon::now()->subDays(14),
-                'reward_description' => '5 SOL bounty for the swift',
+                'reward_description' => 'First 5 to solve — 0.6 / 0.3 / 0.2 / 0.1 / 0.1 XMR, paid by hand',
                 'words' => [
                     ['answer' => 'scurvy', 'hint' => 'The sailor’s curse — cured by a squeeze of lime.'],
                     ['answer' => 'cutlass', 'hint' => 'A short curved blade favored on cramped decks.'],
@@ -54,7 +54,7 @@ class WeekSeeder extends Seeder
                 'number' => 4,
                 'title' => 'The Black Spot',
                 'starts_at' => Carbon::now()->subDays(7),
-                'reward_description' => 'A whispered legend and 2 SOL',
+                'reward_description' => 'First 5 to solve — 0.6 / 0.3 / 0.2 / 0.1 / 0.1 XMR, paid by hand',
                 'words' => [
                     ['answer' => 'plunder', 'hint' => 'The verb and the noun of a pirate’s trade.'],
                     ['answer' => 'galleon', 'hint' => 'A stout ship of many sails, heavy with gold.'],
@@ -65,7 +65,7 @@ class WeekSeeder extends Seeder
                 'number' => 5,
                 'title' => "Cap'n's Last Riddle",
                 'starts_at' => Carbon::now()->subDay(),
-                'reward_description' => 'The grand prize — 10 SOL and a rare TZLA NFT',
+                'reward_description' => 'First 5 to solve — 0.6 / 0.3 / 0.2 / 0.1 / 0.1 XMR, paid by hand',
                 'words' => [
                     ['answer' => 'skull', 'hint' => 'Grinning ivory upon the flag that warns all comers.'],
                     ['answer' => 'lantern', 'hint' => 'A caged flame that guides the night watch.'],

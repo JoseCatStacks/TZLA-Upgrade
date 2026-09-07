@@ -98,6 +98,10 @@ function renderConnect() {
             <button type="button" class="htp-btn" data-action="open-prizes" aria-label="Prizes">
                 <img src="/storage/weekpaper.png" alt="" />
                 <span>Prizes</span>
+            </button>
+            <button type="button" class="htp-btn" data-action="open-profile" aria-label="Username and XMR">
+                <img src="/storage/weekpaper.png" alt="" />
+                <span>${state.wallet.profile_complete ? escape(state.wallet.username) : 'Set XMR'}</span>
             </button>`;
     } else {
         box.innerHTML = `
@@ -169,9 +173,8 @@ async function openPrizes() {
         }
 
         list.innerHTML = weeks.map(w => {
-            const reward = w.reward_description
-                ? `<em>${escape(w.reward_description)}</em>`
-                : '<span style="opacity:.55">To be announced</span>';
+            const { paid, xmr } = prizeLadder();
+            const split = Object.keys(xmr).sort((a, b) => Number(a) - Number(b)).map((p) => xmr[p]).join(' / ');
             const badge = w.reward_claimed
                 ? '<span class="prizes-badge claimed">✓ Claimed</span>'
                 : '<span class="prizes-badge unclaimed">Unclaimed</span>';
@@ -181,7 +184,7 @@ async function openPrizes() {
                     <span class="prizes-week-num">${w.number}</span>
                     <div class="prizes-week-body">
                         ${title}
-                        <div class="prizes-week-reward">${reward}</div>
+                        <div class="prizes-week-reward">First ${paid} · ${escape(split)} XMR</div>
                     </div>
                     ${badge}
                 </div>`;
@@ -196,19 +199,16 @@ function openRewardDetail(weekNumber) {
     if (!w) return;
     const dlg = $('#tzla-reward-detail');
     if (!dlg) return;
-
     const content = $('#reward-detail-content', dlg);
-    const reward = w.reward_description
-        ? `<em>${escape(w.reward_description)}</em>`
-        : '<span style="opacity:.55">To be announced</span>';
+    if (!content) return;
+
     const badge = w.reward_claimed
         ? '<span class="prizes-badge claimed">✓ Claimed</span>'
         : '<span class="prizes-badge unclaimed">Unclaimed</span>';
-
     content.innerHTML = `
         <div class="reward-detail-week-num">Week ${w.number}</div>
         ${w.title ? `<div class="prizes-week-title reward-detail-title">${escape(w.title)}</div>` : ''}
-        <div class="prizes-week-reward reward-detail-reward">${reward}</div>
+        ${prizePlanBlock()}
         <div class="reward-detail-badge">${badge}</div>
     `;
 
@@ -234,8 +234,9 @@ async function refreshMe() {
         const data = await api('GET', '/api/auth/me');
         state.wallet = data.wallet;
         state.attemptsPerWord = data.attempts_per_week || data.attempts_per_word || 0;
-    } catch { state.wallet = null; }
+    }     catch { state.wallet = null; }
     renderConnect();
+    promptProfileIfNeeded();
 }
 
 async function refreshConfig() {
@@ -252,6 +253,33 @@ function currentFeeSol() {
     return state.config.your_fee_sol
         ?? state.config.fees?.standard_sol
         ?? null;
+}
+
+function prizeLadder() {
+    const paid = state.config?.prizes?.paid_places ?? 5;
+    const xmr = state.config?.prizes?.xmr ?? { 1: 0.6, 2: 0.3, 3: 0.2, 4: 0.1, 5: 0.1 };
+    return { paid, xmr };
+}
+
+function ordinalPlace(n) {
+    const v = Number(n);
+    if (v === 1) return '1st';
+    if (v === 2) return '2nd';
+    if (v === 3) return '3rd';
+    return `${v}th`;
+}
+
+function prizePlanBlock() {
+    const { paid, xmr } = prizeLadder();
+    const items = Object.keys(xmr)
+        .sort((a, b) => Number(a) - Number(b))
+        .map((place) => `<span class="tzla-prize-place"><em>${ordinalPlace(place)}</em>${escape(String(xmr[place]))} XMR</span>`)
+        .join('');
+    return `
+        <div class="tzla-prize-plan">
+            <div class="tzla-prize-plan-title">First ${paid} to solve — XMR paid by hand</div>
+            <div class="tzla-prize-plan-row">${items}</div>
+        </div>`;
 }
 
 async function refreshWeeks() {
@@ -425,6 +453,7 @@ async function authenticateWallet(address, adapter) {
     state.attemptsPerWord = verify.attempts_per_week || verify.attempts_per_word || 0;
     renderConnect();
     await Promise.all([refreshConfig(), refreshWeeks()]);
+    promptProfileIfNeeded();
 }
 
 function startConnect() {
@@ -439,6 +468,7 @@ async function disconnectWallet() {
     onAdapterDisconnect();
     state.wallet = null;
     state.attemptsPerWord = 0;
+    closeProfileModal();
     renderConnect();
     await refreshWeeks();
 }
@@ -541,20 +571,38 @@ function renderWeekInPopup(week) {
     const body = $('#tzla-popup-body');
     const connected = week.wallet_connected;
     const eligible = connected && state.wallet && state.wallet.can_play !== false;
+    const profileReady = !!(state.wallet && state.wallet.profile_complete);
     const complete = !!week.week_complete;
     const unlimited = !!week.unlimited_attempts;
     const attemptsLeft = unlimited ? Infinity : (week.attempts_left ?? 0);
-    const canSubmit = eligible && !complete && attemptsLeft > 0;
+    const canSubmit = eligible && profileReady && !complete && attemptsLeft > 0;
 
     const fee = currentFeeSol();
     const paymentsOn = state.config ? state.config.payments_enabled !== false : true;
-    const tier = state.config?.your_fee_tier ? ` (${state.config.your_fee_tier})` : '';
-    const feeNote = (canSubmit && fee !== null && paymentsOn)
-        ? `<div class="tzla-note">Each attempt costs <strong>${formatSol(fee)} SOL</strong>${escape(tier)}. Fill all ${week.total_words || week.words.length} answers, then submit once. Ye only learn how many hit — not which.</div>`
+    const tiers = state.config?.fees?.tiers || [
+        { sol: 0.03, label: 'Golden Ticket' },
+        { sol: 0.06, label: 'NFT or staked TZLA' },
+        { sol: 0.09, label: 'TZLA holder (under 33)' },
+    ];
+    const tierList = tiers.map(t => `<strong>${formatSol(t.sol)}</strong> ${escape(t.label)}`).join(' · ');
+    const yours = (fee !== null && state.config?.your_fee_tier)
+        ? ` Yer wallet: <strong>${formatSol(fee)} SOL</strong> (${escape(state.config.your_fee_tier)}).`
         : '';
+    const detected = state.wallet
+        ? ` On-chain: ${escape(String(state.wallet.tzla_balance ?? 0))} TZLA, ${escape(String(state.wallet.staked_amount ?? 0))} staked, ${state.wallet.nft_count || 0} NFT, ${state.wallet.golden_ticket_count || 0} Golden Ticket.`
+        : '';
+    const feeNote = (canSubmit && paymentsOn)
+        ? `<div class="tzla-note">Fees: ${tierList}.${yours}${detected} Fill all ${week.total_words || week.words.length} answers, then submit once. Ye only learn how many hit — not which.</div>`
+        : (canSubmit
+            ? `<div class="tzla-note">Fees: ${tierList}.${detected} Fill all ${week.total_words || week.words.length} answers, then submit once. Ye only learn how many hit — not which.</div>`
+            : '');
 
     const ineligibleNote = (connected && !eligible)
         ? '<div class="tzla-note">This wallet is not eligible to play. Hold TZLA, stake TZLA, hold an NFT, or a Golden Ticket.</div>'
+        : '';
+
+    const profileNote = (connected && eligible && !profileReady && !complete)
+        ? '<div class="tzla-note">Set a username and Monero address before ye can submit.</div>'
         : '';
 
     const attemptsNote = connected && eligible && !complete
@@ -562,14 +610,6 @@ function renderWeekInPopup(week) {
             ? '<div class="tzla-note">Unlimited attempts this week (fee still due each submit).</div>'
             : `<div class="tzla-note">${attemptsLeft}/${week.attempts_allowed ?? 0} attempts left this week.</div>`)
         : '';
-
-    const profile = canSubmit ? `
-        <div class="tzla-profile">
-            <input type="text" id="tzla-username" maxlength="64" placeholder="Display name (optional)"
-                   value="${escape(state.wallet?.username || '')}" autocomplete="off" />
-            <input type="text" id="tzla-payout" maxlength="64" placeholder="Payout wallet (optional)"
-                   value="${escape(state.wallet?.payout_address || '')}" autocomplete="off" />
-        </div>` : '';
 
     const rows = (week.words || []).map(word => {
         if (complete && word.solved_answer) {
@@ -596,12 +636,12 @@ function renderWeekInPopup(week) {
     }).join('');
 
     body.innerHTML = `
-        ${week.reward_description ? `<div class="tzla-reward">Reward: <em>${escape(week.reward_description)}</em></div>` : ''}
+        ${prizePlanBlock()}
         ${!connected ? '<div class="tzla-note">Connect a Solana wallet to submit a bundle.</div>' : ''}
         ${ineligibleNote}
+        ${profileNote}
         ${attemptsNote}
         ${feeNote}
-        ${profile}
         <form class="tzla-bundle" data-week="${week.number}">
             <div class="tzla-words">${rows}</div>
             ${canSubmit ? `
@@ -622,6 +662,9 @@ function renderWeekInPopup(week) {
         });
         updateBundleSubmitEnabled(form);
     }
+    if (connected && eligible && !profileReady && !complete) {
+        promptProfileIfNeeded();
+    }
 }
 
 function updateBundleSubmitEnabled(form) {
@@ -639,13 +682,64 @@ function formatSol(amount) {
     return String(parseFloat(Number(amount).toFixed(9)));
 }
 
-function profileFields() {
-    const username = ($('#tzla-username')?.value || '').trim();
-    const payout = ($('#tzla-payout')?.value || '').trim();
-    const out = {};
-    if (username) out.username = username;
-    if (payout) out.payout_address = payout;
-    return out;
+function needsProfile() {
+    return !!(state.wallet && state.wallet.profile_complete === false);
+}
+
+function promptProfileIfNeeded() {
+    if (needsProfile()) openProfileModal();
+    else closeProfileModal();
+}
+
+function openProfileModal() {
+    const modal = $('#profileModal');
+    if (!modal) return;
+    const user = $('#profile-username');
+    const xmr = $('#profile-xmr');
+    const err = $('#profileError');
+    if (user) user.value = state.wallet?.username || '';
+    if (xmr) xmr.value = state.wallet?.payout_address || '';
+    if (err) err.textContent = '';
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('wallet-modal-open');
+    user?.focus();
+}
+
+function closeProfileModal() {
+    const modal = $('#profileModal');
+    if (!modal) return;
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+    if (!$('#walletModal')?.classList.contains('open')) {
+        document.body.classList.remove('wallet-modal-open');
+    }
+}
+
+async function onProfileSubmit(e) {
+    e.preventDefault();
+    const err = $('#profileError');
+    const username = ($('#profile-username')?.value || '').trim();
+    const payout = ($('#profile-xmr')?.value || '').trim();
+    if (err) err.textContent = '';
+    if (username.length < 2) {
+        if (err) err.textContent = 'Username must be at least 2 characters.';
+        return;
+    }
+    try {
+        const data = await api('POST', '/api/auth/profile', {
+            username,
+            payout_address: payout,
+        });
+        state.wallet = data.wallet;
+        closeProfileModal();
+        renderConnect();
+        showToast('Username and XMR address saved.');
+        const openWeek = $('#tzla-popup')?.dataset?.week;
+        if (openWeek) loadWeekIntoPopup(parseInt(openWeek, 10));
+    } catch (ex) {
+        if (err) err.textContent = ex.message || 'Could not save profile.';
+    }
 }
 
 /**
@@ -737,7 +831,7 @@ function clearPendingFee() {
  * consumed once verification actually succeeds.
  */
 async function submitBundleWithRetry(weekNumber, answers, feeSignature, status) {
-    const payload = { answers, fee_signature: feeSignature, ...profileFields() };
+    const payload = { answers, fee_signature: feeSignature };
     const maxAttempts = 6;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -841,6 +935,10 @@ function guessErrorMessage(err) {
     if (err.code === 'incomplete_answers') {
         return err.message || 'Fill every answer before submitting.';
     }
+    if (err.code === 'profile_incomplete') {
+        promptProfileIfNeeded();
+        return err.message || 'Set a username and Monero address first.';
+    }
     return err.message || 'Submission failed.';
 }
 
@@ -860,6 +958,7 @@ function wireEvents() {
         if (t.dataset.action === 'open-prizes')  openPrizes();
         if (t.dataset.action === 'close-prizes') $('#tzla-prizes').close();
         if (t.dataset.action === 'close-wallet-modal') closeWalletModal();
+        if (t.dataset.action === 'open-profile') openProfileModal();
     });
 
     const walletBackdrop = document.querySelector('#walletModal .wallet-modal-backdrop');
@@ -895,6 +994,11 @@ function wireEvents() {
         rewardDetailDlg.addEventListener('click', ev => {
             if (!ev.target.closest('.prizes-content')) rewardDetailDlg.close();
         });
+    }
+
+    const profileForm = $('#profileForm');
+    if (profileForm) {
+        profileForm.addEventListener('submit', onProfileSubmit);
     }
 
     $$('.weekpaper[data-week]').forEach(el => {

@@ -105,6 +105,11 @@ final class Wallet extends Model
             || $this->hasStaked();
     }
 
+    public function hasPayoutProfile(): bool
+    {
+        return filled($this->username) && filled($this->payout_address);
+    }
+
     public function shortAddress(): string
     {
         return strlen($this->address) > 10

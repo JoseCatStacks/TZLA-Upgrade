@@ -45,10 +45,11 @@ final class FeeTierTest extends TestCase
         $this->assertSame(0.06, (new FeeTier)->amountSol($wallet));
     }
 
-    public function test_high_tzla_gets_mid_tier(): void
+    public function test_high_tzla_without_nft_or_stake_pays_standard(): void
     {
-        $wallet = new Wallet(['tzla_balance_cached' => 33, 'nft_count_cached' => 0]);
-        $this->assertSame(0.06, (new FeeTier)->amountSol($wallet));
+        $wallet = new Wallet(['tzla_balance_cached' => 40, 'nft_count_cached' => 0]);
+        $this->assertSame(0.09, (new FeeTier)->amountSol($wallet));
+        $this->assertSame('TZLA holder', (new FeeTier)->label($wallet));
     }
 
     public function test_low_tzla_gets_standard_tier(): void

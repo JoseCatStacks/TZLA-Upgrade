@@ -7,6 +7,7 @@ namespace App\Console\Commands\Treasure;
 use App\Models\Week;
 use App\Models\WeekCompletion;
 use App\Models\WordCompletion;
+use App\Services\Guess\PrizeLadder;
 use Illuminate\Console\Command;
 
 final class CompletionsCommand extends Command
@@ -17,20 +18,20 @@ final class CompletionsCommand extends Command
 
     protected $description = 'Audit view of completions for manual reward payout.';
 
-    public function handle(): int
+    public function handle(PrizeLadder $prizes): int
     {
         if ($this->option('words')) {
             return $this->listWordCompletions();
         }
 
-        return $this->listWeekCompletions();
+        return $this->listWeekCompletions($prizes);
     }
 
-    private function listWeekCompletions(): int
+    private function listWeekCompletions(PrizeLadder $prizes): int
     {
         $query = WeekCompletion::query()
             ->with(['wallet', 'week'])
-            ->orderBy('completed_at', 'desc');
+            ->orderBy('id');
 
         if ($this->option('week') !== null) {
             $week = Week::query()->where('number', (int) $this->option('week'))->first();
@@ -50,14 +51,30 @@ final class CompletionsCommand extends Command
             return self::SUCCESS;
         }
 
+        $placeById = [];
+        $completions->groupBy('week_id')->each(function ($rows) use (&$placeById): void {
+            $i = 1;
+            foreach ($rows->sortBy('id') as $row) {
+                $placeById[$row->id] = $i++;
+            }
+        });
+
         $this->table(
-            ['week', 'wallet', 'reward', 'completed_at'],
-            $completions->map(fn (WeekCompletion $c): array => [
-                $c->week?->number,
-                $c->wallet?->address,
-                $c->week?->reward_description ?? '—',
-                $c->completed_at?->toDateTimeString(),
-            ])->all()
+            ['week', 'place', 'prize_xmr', 'username', 'solana', 'xmr', 'completed_at'],
+            $completions->map(function (WeekCompletion $c) use ($prizes, $placeById): array {
+                $place = $placeById[$c->id] ?? 0;
+                $prize = $prizes->prizeXmr($place);
+
+                return [
+                    $c->week?->number,
+                    $place,
+                    $prize === null ? 'unpaid' : $prize,
+                    $c->wallet?->username ?: '—',
+                    $c->wallet?->address,
+                    $c->wallet?->payout_address ?: '—',
+                    $c->completed_at?->toDateTimeString(),
+                ];
+            })->all()
         );
 
         return self::SUCCESS;

@@ -13,6 +13,7 @@ Route::prefix('auth')->group(function (): void {
     Route::post('/nonce', [AuthController::class, 'nonce'])->middleware('throttle:20,1');
     Route::post('/verify', [AuthController::class, 'verify'])->middleware('throttle:20,1');
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::post('/profile', [AuthController::class, 'profile'])->middleware('throttle:30,1');
     Route::get('/me', [AuthController::class, 'me']);
 });
 

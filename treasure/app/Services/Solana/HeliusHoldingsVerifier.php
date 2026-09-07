@@ -40,23 +40,32 @@ final class HeliusHoldingsVerifier implements HoldingsVerifier
         );
     }
 
+    private const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+
+    private const TOKEN_2022_PROGRAM = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
+
     private function fetchTzlaBalance(string $owner): float
     {
         if ($this->tzlaMint === null || $this->tzlaMint === '') {
             return 0.0;
         }
 
-        $response = $this->rpc('getTokenAccountsByOwner', [
-            $owner,
-            ['mint' => $this->tzlaMint],
-            ['encoding' => 'jsonParsed'],
-        ]);
-
-        $accounts = data_get($response, 'result.value', []);
         $total = 0.0;
-        foreach ($accounts as $account) {
-            $amount = (float) data_get($account, 'account.data.parsed.info.tokenAmount.uiAmount', 0);
-            $total += $amount;
+        foreach ([self::TOKEN_PROGRAM, self::TOKEN_2022_PROGRAM] as $programId) {
+            $response = $this->rpc('getTokenAccountsByOwner', [
+                $owner,
+                ['mint' => $this->tzlaMint, 'programId' => $programId],
+                ['encoding' => 'jsonParsed'],
+            ]);
+
+            $accounts = data_get($response, 'result.value', []);
+            if (! is_array($accounts)) {
+                continue;
+            }
+            foreach ($accounts as $account) {
+                $amount = (float) data_get($account, 'account.data.parsed.info.tokenAmount.uiAmount', 0);
+                $total += $amount;
+            }
         }
 
         return $total;
@@ -84,20 +93,28 @@ final class HeliusHoldingsVerifier implements HoldingsVerifier
                 'ownerAddress' => $owner,
                 'page' => $page,
                 'limit' => $limit,
-                'displayOptions' => ['showCollectionMetadata' => false],
+                'displayOptions' => [
+                    'showCollectionMetadata' => true,
+                    'showUnverifiedCollections' => true,
+                    'showGrandfatheredMetadata' => true,
+                ],
             ]);
 
+            if (data_get($response, 'error')) {
+                Log::warning('Helius getAssetsByOwner error', [
+                    'owner' => $owner,
+                    'error' => data_get($response, 'error'),
+                ]);
+                break;
+            }
+
             $items = data_get($response, 'result.items', []);
+            if (! is_array($items)) {
+                break;
+            }
 
             foreach ($items as $item) {
-                $collection = null;
-                foreach (data_get($item, 'grouping', []) as $group) {
-                    if (data_get($group, 'group_key') === 'collection') {
-                        $collection = data_get($group, 'group_value');
-                        break;
-                    }
-                }
-
+                $collection = $this->collectionId($item);
                 if ($collection === null) {
                     continue;
                 }
@@ -118,6 +135,36 @@ final class HeliusHoldingsVerifier implements HoldingsVerifier
         }
 
         return ['nftCount' => $nftCount, 'goldenTicketCount' => $goldenTicketCount];
+    }
+
+    /** @param  array<string, mixed>  $item */
+    private function collectionId(array $item): ?string
+    {
+        foreach (data_get($item, 'grouping', []) as $group) {
+            if (! is_array($group)) {
+                continue;
+            }
+            if (data_get($group, 'group_key') === 'collection') {
+                $value = data_get($group, 'group_value');
+                if (is_string($value) && $value !== '') {
+                    return $value;
+                }
+            }
+        }
+
+        foreach ([
+            'collection.address',
+            'collection.key',
+            'content.metadata.collection.key',
+            'content.metadata.collection',
+        ] as $path) {
+            $value = data_get($item, $path);
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /**

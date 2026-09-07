@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Wallet;
 use App\Services\Guess\FeeTier;
 use App\Services\Solana\BlockhashService;
+use App\Services\Solana\WalletHoldingsSync;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -19,11 +20,15 @@ final class GameConfigController extends Controller
 {
     public function __construct(
         private readonly FeeTier $feeTier,
+        private readonly WalletHoldingsSync $holdingsSync,
     ) {}
 
     public function index(Request $request): JsonResponse
     {
         $wallet = $this->currentWallet($request);
+        if ($wallet !== null) {
+            $this->holdingsSync->refresh($wallet);
+        }
 
         $standard = (float) config('game.submission_fees.standard_sol', 0.09);
         $mid = (float) config('game.submission_fees.mid_sol', 0.06);
@@ -37,6 +42,11 @@ final class GameConfigController extends Controller
                 'mid_sol' => $mid,
                 'golden_ticket_sol' => $golden,
                 'tzla_mid_threshold' => (float) config('game.play_gate.tzla_mid_threshold', 33),
+                'tiers' => [
+                    ['sol' => $golden, 'label' => 'Golden Ticket'],
+                    ['sol' => $mid, 'label' => 'NFT or staked TZLA'],
+                    ['sol' => $standard, 'label' => 'TZLA holder (under 33)'],
+                ],
             ],
             'max_playable_week' => (int) config('game.weeks.max_playable', 1),
             'unlimited_attempt_weeks' => array_values(array_map(
@@ -44,6 +54,12 @@ final class GameConfigController extends Controller
                 config('game.weeks.unlimited_attempts', [1]),
             )),
             'payments_enabled' => strtolower((string) config('solana.provider')) === 'helius',
+            'prizes' => [
+                'paid_places' => (int) config('game.prizes.paid_places', 5),
+                'xmr' => collect(config('game.prizes.xmr', []))
+                    ->mapWithKeys(fn ($amt, $place): array => [(int) $place => (float) $amt])
+                    ->all(),
+            ],
             'your_fee_sol' => $wallet ? $this->feeTier->amountSol($wallet) : $standard,
             'your_fee_tier' => $wallet ? $this->feeTier->label($wallet) : 'standard',
         ]);

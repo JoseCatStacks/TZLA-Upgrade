@@ -636,8 +636,8 @@
                 <li class="step">
                     <div class="step-num" aria-hidden="true">VII</div>
                     <div class="step-body">
-                        <div class="step-head">First to Solve <span class="monero">Wins the Grand Prize</span></div>
-                        <div class="step-copy">The swiftest wit claims the full chest of Monero. Second place claims naught.</div>
+                        <div class="step-head">First Five to Solve <span class="monero">Share the Chest</span></div>
+                        <div class="step-copy">1st 0.6 XMR · 2nd 0.3 · 3rd 0.2 · 4th 0.1 · 5th 0.1. Paid by hand after we confirm no foul play.</div>
                     </div>
                 </li>
             </ol>

@@ -10,6 +10,10 @@ return [
 
     'chat_id' => env('TELEGRAM_CHAT_ID'),
 
+    // Forum topic / "subchannel" id. Leave blank to post in the main chat.
+    // When the real winners topic exists, set this and keep the same bot.
+    'message_thread_id' => env('TELEGRAM_MESSAGE_THREAD_ID'),
+
     // Shared secret echoed back by Telegram in the X-Telegram-Bot-Api-Secret-Token
     // header. Register it with setWebhook. The webhook refuses every request when
     // this is unset, because the chat-id check alone is trivially forged.

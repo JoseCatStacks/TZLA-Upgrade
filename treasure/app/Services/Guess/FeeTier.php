@@ -10,9 +10,9 @@ use App\Models\Wallet;
  * Resolves the per-bundle SOL fee for a wallet.
  *
  * Tiers (best / lowest wins):
- *  - Golden Ticket → golden fee
- *  - NFT or staked TZLA or liquid TZLA ≥ mid threshold → mid fee
- *  - Otherwise eligible holder → standard fee
+ *  - Golden Ticket              → 0.03
+ *  - TZLA NFT or staked TZLA    → 0.06
+ *  - Eligible TZLA holder       → 0.09
  */
 final class FeeTier
 {
@@ -22,10 +22,7 @@ final class FeeTier
             return (float) config('game.submission_fees.golden_ticket_sol', 0.03);
         }
 
-        if ($wallet->holdsNft()
-            || $wallet->hasStaked()
-            || $wallet->tzlaBalance() >= (float) config('game.play_gate.tzla_mid_threshold', 33.0)
-        ) {
+        if ($wallet->holdsNft() || $wallet->hasStaked()) {
             return (float) config('game.submission_fees.mid_sol', 0.06);
         }
 
@@ -35,7 +32,7 @@ final class FeeTier
     public function label(Wallet $wallet): string
     {
         if ($wallet->holdsGoldenTicket()) {
-            return 'golden ticket';
+            return 'Golden Ticket';
         }
         if ($wallet->holdsNft()) {
             return 'NFT holder';
@@ -43,10 +40,7 @@ final class FeeTier
         if ($wallet->hasStaked()) {
             return 'staked TZLA';
         }
-        if ($wallet->tzlaBalance() >= (float) config('game.play_gate.tzla_mid_threshold', 33.0)) {
-            return '33+ TZLA';
-        }
 
-        return 'standard';
+        return 'TZLA holder';
     }
 }

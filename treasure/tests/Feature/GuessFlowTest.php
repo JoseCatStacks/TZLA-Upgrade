@@ -34,6 +34,7 @@ final class GuessFlowTest extends TestCase
             'game.submission_fees.mid_sol' => 0.06,
             'game.submission_fees.golden_ticket_sol' => 0.03,
         ]);
+        Queue::fake();
     }
 
     private function nextFeeSig(): string
@@ -184,6 +185,17 @@ final class GuessFlowTest extends TestCase
             ->assertJson(['error' => 'fee_signature_already_used']);
     }
 
+    public function test_bundle_requires_username_and_xmr_before_play(): void
+    {
+        $this->app->instance(HoldingsVerifier::class, new StubHoldingsVerifier(tzlaBalance: 10.0, nftCount: 0));
+        $this->connect(withProfile: false);
+        $this->seedWeek1();
+
+        $this->submitBundle(1, ['parchment', 'jollyroger', 'doubloon'])
+            ->assertStatus(403)
+            ->assertJson(['error' => 'profile_incomplete']);
+    }
+
     public function test_full_clear_writes_winner_log_and_notifies(): void
     {
         Queue::fake();
@@ -207,7 +219,11 @@ final class GuessFlowTest extends TestCase
         $logContents = file_get_contents(storage_path('logs/winners.log'));
         $this->assertStringContainsString('week_completed', $logContents);
 
-        Queue::assertPushed(SendTelegramMessage::class);
+        Queue::assertPushed(SendTelegramMessage::class, function (SendTelegramMessage $job): bool {
+            return str_contains($job->message, 'Week 1 clear — place 1 / 0.6 XMR')
+                && str_contains($job->message, 'username: capn-test')
+                && str_contains($job->message, 'xmr: 4AAAAAAAA');
+        });
     }
 
     public function test_already_completed_refused_without_charging(): void
@@ -264,18 +280,18 @@ final class GuessFlowTest extends TestCase
         ])->assertStatus(422);
     }
 
-    public function test_mid_fee_tier_for_high_tzla_balance(): void
+    public function test_tzla_only_wallet_pays_standard_fee(): void
     {
         $this->app->instance(HoldingsVerifier::class, new StubHoldingsVerifier(tzlaBalance: 40.0, nftCount: 0));
         $this->connect();
 
         $this->getJson('/api/game-config')
             ->assertOk()
-            ->assertJsonPath('your_fee_sol', 0.06)
-            ->assertJsonPath('your_fee_tier', '33+ TZLA');
+            ->assertJsonPath('your_fee_sol', 0.09)
+            ->assertJsonPath('your_fee_tier', 'TZLA holder');
     }
 
-    private function connect(): void
+    private function connect(bool $withProfile = true): void
     {
         $address = $this->kp->address;
         $nonceRes = $this->postJson('/api/auth/nonce', ['address' => $address])->assertOk()->json();
@@ -285,6 +301,13 @@ final class GuessFlowTest extends TestCase
             'nonce' => $nonceRes['nonce'],
             'signature' => $sig,
         ])->assertOk();
+
+        if ($withProfile) {
+            $this->postJson('/api/auth/profile', [
+                'username' => 'capn-test',
+                'payout_address' => '4'.str_repeat('A', 94),
+            ])->assertOk();
+        }
     }
 
     private function seedWeek1(): void

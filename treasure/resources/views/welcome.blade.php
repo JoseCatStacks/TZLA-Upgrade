@@ -632,6 +632,29 @@
             font-style:italic;color:rgba(240,215,160,.55);
             padding:.8rem .2rem;margin:0;
         }
+        .profile-form{display:flex;flex-direction:column;gap:.7rem}
+        .profile-form label{
+            font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;
+            color:rgba(240,215,160,.65);
+        }
+        .profile-form input{
+            width:100%;box-sizing:border-box;
+            background:rgba(255,230,180,.06);
+            border:1px solid rgba(200,160,90,.35);
+            border-radius:4px;padding:.7rem .8rem;
+            color:rgba(240,215,160,.95);font-family:inherit;font-size:.95rem;
+            outline:none;
+        }
+        .profile-form input:focus{border-color:rgba(244,198,106,.8)}
+        .profile-form .profile-submit{
+            margin-top:.3rem;cursor:pointer;
+            background:rgba(244,198,106,.16);
+            border:1px solid rgba(244,198,106,.55);
+            color:#f4c66a;font-family:'Pirata One',cursive;
+            font-size:1.15rem;letter-spacing:.06em;padding:.65rem 1rem;
+        }
+        .profile-form .profile-submit:hover{background:rgba(244,198,106,.28)}
+        .profile-error{color:#e07060;font-style:italic;min-height:1.2em;margin:0;font-size:.9rem}
         @media (max-width:700px){
             .wallet-modal-panel{
                 max-height:min(70vh,520px);
@@ -744,6 +767,27 @@
         .tzla-reward{
             text-align:center;font-style:italic;color:var(--blood);
             margin-bottom:.9em;font-size:.95em;
+        }
+        .tzla-prize-plan{
+            text-align:center;margin-bottom:.9em;
+            border:1px dashed rgba(74,47,20,.35);border-radius:3px;
+            padding:.65em .5em .75em;
+        }
+        .tzla-prize-plan-title{
+            font-family:'Pirata One',cursive;color:var(--blood);
+            letter-spacing:.04em;font-size:1.05em;margin-bottom:.45em;
+        }
+        .tzla-prize-plan-row{
+            display:flex;flex-wrap:wrap;justify-content:center;gap:.35em .55em;
+        }
+        .tzla-prize-place{
+            font-size:.82em;color:var(--ink-soft);
+            background:rgba(122,26,13,.07);
+            border:1px solid rgba(122,26,13,.22);
+            border-radius:3px;padding:.2em .45em;
+        }
+        .tzla-prize-place em{
+            font-style:normal;font-weight:700;color:var(--blood);margin-right:.2em;
         }
         .tzla-note{
             text-align:center;color:var(--ink-soft);font-style:italic;
@@ -1140,21 +1184,21 @@
                             <span class="htp-tier-icon">★</span>
                             <span class="htp-tier-text">
                                 <span class="htp-tier-label">Golden Ticket NFT</span><br>
-                                <span class="htp-tier-desc">Any Golden Ticket — maximum reward rate</span>
+                                <span class="htp-tier-desc">Any Golden Ticket — 0.03 SOL per attempt</span>
                             </span>
                         </div>
                         <div class="htp-tier" data-tier="nft">
                             <span class="htp-tier-icon">◈</span>
                             <span class="htp-tier-text">
                                 <span class="htp-tier-label">TZLA NFT holder</span><br>
-                                <span class="htp-tier-desc">One or more TZLA collection NFTs</span>
+                                <span class="htp-tier-desc">One or more TZLA collection NFTs — 0.06 SOL</span>
                             </span>
                         </div>
                         <div class="htp-tier" data-tier="token">
                             <span class="htp-tier-icon">⚓</span>
                             <span class="htp-tier-text">
                                 <span class="htp-tier-label">9+ TZLA or staked</span><br>
-                                <span class="htp-tier-desc">Hold at least 9 TZLA liquid, or keep any TZLA staked</span>
+                                <span class="htp-tier-desc">Hold at least 9 TZLA liquid (0.09 SOL if under 33), or keep any TZLA staked (0.06 SOL)</span>
                             </span>
                         </div>
                     </div>
@@ -1171,8 +1215,8 @@
                         <li data-n="I">Right now only Week 1 is open — later weeks stay locked until we say otherwise.</li>
                         <li data-n="II">Week 1 has unlimited tries. Fill every answer, then submit the bundle once — no partial scrolls.</li>
                         <li data-n="III">The only clue ye get is how many hit (1/3, 2/3…). Not which ones.</li>
-                        <li data-n="IV">Clear all three and yer name and wallet go on the bounty board for a hand-paid prize.</li>
-                        <li data-n="V">Each bundle costs SOL: 0.03 Golden Ticket · 0.06 NFT / staked / 33+ TZLA · 0.09 otherwise.</li>
+                        <li data-n="IV">First 5 to clear all three win XMR, paid by hand: 0.6 · 0.3 · 0.2 · 0.1 · 0.1.</li>
+                        <li data-n="V">Each bundle costs SOL: 0.03 Golden Ticket · 0.06 NFT or staked TZLA · 0.09 TZLA holder (under 33).</li>
                     </ol>
                 </div>
             </div>
@@ -1209,6 +1253,25 @@
             </div>
             <div id="walletModalHint" class="wallet-modal-hint"></div>
             <div id="walletModalList" class="wallet-modal-list"></div>
+        </div>
+    </div>
+
+    <div id="profileModal" class="wallet-modal-overlay" aria-hidden="true" role="dialog" aria-labelledby="profileModalTitle">
+        <div class="wallet-modal-backdrop"></div>
+        <div class="wallet-modal-panel">
+            <div class="wallet-modal-header">
+                <h2 id="profileModalTitle" class="wallet-modal-title">Username &amp; XMR</h2>
+            </div>
+            <p class="wallet-modal-hint" style="display:block">Needed once, before ye can play. Prizes are sent by hand to this Monero address.</p>
+            <form id="profileForm" class="profile-form">
+                <label for="profile-username">Username</label>
+                <input type="text" id="profile-username" name="username" maxlength="64" required autocomplete="off" placeholder="How ye shall be listed" />
+                <label for="profile-xmr">Monero receiving address</label>
+                <input type="text" id="profile-xmr" name="payout_address" maxlength="110" required autocomplete="off" placeholder="Starts with 4 or 8…" />
+                <p id="profileError" class="profile-error"></p>
+                <button type="submit" class="profile-submit">Save</button>
+                <button type="button" class="wallet-modal-close" style="align-self:center;font-size:.95rem;font-family:'IM Fell English',serif" data-action="disconnect">Disconnect instead</button>
+            </form>
         </div>
     </div>
 

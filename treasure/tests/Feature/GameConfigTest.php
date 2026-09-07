@@ -64,6 +64,16 @@ final class GameConfigTest extends TestCase
             ->assertJson([
                 'max_playable_week' => 1,
                 'unlimited_attempt_weeks' => [1],
+                'prizes' => [
+                    'paid_places' => 5,
+                    'xmr' => [
+                        1 => 0.6,
+                        2 => 0.3,
+                        3 => 0.2,
+                        4 => 0.1,
+                        5 => 0.1,
+                    ],
+                ],
             ]);
     }
 
